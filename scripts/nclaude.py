@@ -8,8 +8,10 @@ import fcntl
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -81,6 +83,7 @@ BASE = get_base_dir()
 LOG = BASE / "messages.log"
 LOCK = BASE / ".lock"
 SESSIONS = BASE / "sessions"
+PENDING = BASE / "pending"
 
 
 def init():
@@ -171,9 +174,128 @@ def clear():
     return {"status": "cleared"}
 
 
+def pending(session_id: str):
+    """Check for pending messages (written by listen daemon)
+
+    The listen daemon writes line numbers to pending/<session_id> when new
+    messages arrive. This function reads those line numbers, fetches the
+    actual messages, and clears the pending file.
+    """
+    pending_file = PENDING / session_id
+
+    if not pending_file.exists():
+        return {"pending": False, "messages": [], "count": 0}
+
+    # Read pending line range
+    try:
+        content = pending_file.read_text().strip()
+        if not content:
+            pending_file.unlink()
+            return {"pending": False, "messages": [], "count": 0}
+
+        # Format: "start_line:end_line" (0-indexed)
+        start, end = map(int, content.split(":"))
+    except (ValueError, FileNotFoundError):
+        return {"pending": False, "messages": [], "count": 0}
+
+    # Fetch messages from log
+    if not LOG.exists():
+        pending_file.unlink()
+        return {"pending": False, "messages": [], "count": 0}
+
+    lines = LOG.read_text().splitlines()
+    pending_msgs = lines[start:end]
+
+    # Clear pending file
+    pending_file.unlink()
+
+    # Update session pointer to current end
+    pointer_file = SESSIONS / session_id
+    pointer_file.parent.mkdir(parents=True, exist_ok=True)
+    pointer_file.write_text(str(end))
+
+    return {
+        "pending": True,
+        "messages": pending_msgs,
+        "count": len(pending_msgs),
+        "range": f"{start}:{end}"
+    }
+
+
+def listen(session_id: str, interval: int = 5):
+    """Run daemon that monitors for new messages
+
+    Runs in foreground - use & or nohup for background.
+    Writes line range to pending/<session_id> when new messages arrive.
+    Format: "start_line:end_line" (0-indexed, exclusive end)
+    """
+    init()
+    PENDING.mkdir(parents=True, exist_ok=True)
+    pending_file = PENDING / session_id
+    pointer_file = SESSIONS / session_id
+
+    # Handle graceful shutdown
+    running = True
+    def handle_signal(signum, frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    print(json.dumps({
+        "status": "listening",
+        "session": session_id,
+        "interval": interval,
+        "pending_file": str(pending_file)
+    }), flush=True)
+
+    while running:
+        try:
+            # Get current pointer (last read position)
+            last_read = 0
+            if pointer_file.exists():
+                try:
+                    last_read = int(pointer_file.read_text().strip() or "0")
+                except ValueError:
+                    last_read = 0
+
+            # Get total line count
+            total_lines = 0
+            if LOG.exists():
+                total_lines = len(LOG.read_text().splitlines())
+
+            # Check for new messages
+            if total_lines > last_read:
+                # Write pending range
+                pending_file.write_text(f"{last_read}:{total_lines}")
+                new_count = total_lines - last_read
+
+                print(json.dumps({
+                    "event": "new_messages",
+                    "count": new_count,
+                    "range": f"{last_read}:{total_lines}",
+                    "session": session_id
+                }), flush=True)
+
+                # Terminal bell for human awareness
+                print("\a", end="", flush=True)
+
+            time.sleep(interval)
+        except Exception as e:
+            print(json.dumps({"error": str(e)}), file=sys.stderr, flush=True)
+            time.sleep(interval)
+
+    # Cleanup
+    if pending_file.exists():
+        pending_file.unlink()
+
+    print(json.dumps({"status": "stopped", "session": session_id}), flush=True)
+
+
 def main():
     if len(sys.argv) < 2:
-        print(json.dumps({"error": "Usage: nclaude.py <init|send|read|status|clear|whoami> [args]"}))
+        print(json.dumps({"error": "Usage: nclaude.py <init|send|read|status|clear|whoami|pending|listen> [args]"}))
         sys.exit(1)
 
     cmd = sys.argv[1]
@@ -219,6 +341,21 @@ def main():
             result = status()
         elif cmd == "clear":
             result = clear()
+        elif cmd == "pending":
+            session_id = positional[0] if positional else get_auto_session_id()
+            result = pending(session_id)
+        elif cmd == "listen":
+            session_id = positional[0] if positional else get_auto_session_id()
+            # Parse --interval flag
+            interval = 5
+            for i, arg in enumerate(args):
+                if arg == "--interval" and i + 1 < len(args):
+                    try:
+                        interval = int(args[i + 1])
+                    except ValueError:
+                        pass
+            listen(session_id, interval)
+            result = None  # listen handles its own output
         else:
             result = {"error": f"Unknown command: {cmd}"}
     except Exception as e:

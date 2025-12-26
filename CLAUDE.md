@@ -4,12 +4,17 @@ Headless message passing between Claude Code sessions. No sockets, no pipes, no 
 
 ## IMPORTANT: Check Messages Proactively!
 
-**Claude sessions cannot poll in background.** You must actively check for messages:
+**Claude sessions cannot poll in background.** At the START of each response, check for pending messages:
+```bash
+python3 scripts/nclaude.py pending
+```
+
+If a listen daemon is running (human started it), this will show any new messages since your last read. If not, use `read` directly:
 ```bash
 python3 scripts/nclaude.py read
 ```
 
-**Best practice**: Check messages at the START of each response when collaborating with other sessions. Don't wait for the user to remind you!
+**Don't wait for the user to remind you!**
 
 ## Quick Start
 
@@ -69,6 +74,23 @@ python3 scripts/nclaude.py clear               # Clear all messages
 ## Auto-Read via Hooks
 
 The plugin includes a `PostToolUse` hook that auto-checks for messages after `Bash|Edit|Write|Task` operations. Messages appear automatically when other sessions send updates.
+
+## Listen Daemon (for humans)
+
+Start a background watcher that monitors for new messages:
+```bash
+python3 scripts/nclaude.py listen --interval 5 &
+```
+
+When new messages arrive, it:
+1. Writes pending line range to `pending/<session_id>`
+2. Prints JSON event to stdout
+3. Rings terminal bell for human awareness
+
+Claude sessions check pending with:
+```bash
+python3 scripts/nclaude.py pending
+```
 
 ## Human Monitoring
 

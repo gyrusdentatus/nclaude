@@ -94,17 +94,33 @@ def init():
     return {"status": "ok", "path": str(BASE)}
 
 
-def send(session_id: str, message: str):
-    """Send a message (atomic append with flock)"""
+def send(session_id: str, message: str, msg_type: str = "MSG"):
+    """Send a message (atomic append with flock)
+
+    Args:
+        session_id: Session identifier
+        message: Message content (can be multi-line)
+        msg_type: Message type (MSG, TASK, REPLY, STATUS, ERROR, URGENT)
+    """
     init()
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    line = f"[{ts}] [{session_id}] {message}\n"
+
+    # Check if message is multi-line
+    if "\n" in message:
+        # Use delimited format for multi-line messages
+        line = f"<<<[{ts}][{session_id}][{msg_type}]>>>\n{message}\n<<<END>>>\n"
+    else:
+        # Simple single-line format (backward compatible)
+        if msg_type != "MSG":
+            line = f"[{ts}] [{session_id}] [{msg_type}] {message}\n"
+        else:
+            line = f"[{ts}] [{session_id}] {message}\n"
 
     with open(LOCK, "r") as lock_fd:
         fcntl.flock(lock_fd, fcntl.LOCK_EX)
         with open(LOG, "a") as f:
             f.write(line)
-    return {"sent": message, "session": session_id, "timestamp": ts}
+    return {"sent": message, "session": session_id, "timestamp": ts, "type": msg_type}
 
 
 def read(session_id: str, all_messages: bool = False, quiet: bool = False):
@@ -305,8 +321,25 @@ def main():
     quiet = "--quiet" in args or "-q" in args
     all_msgs = "--all" in args
 
-    # Get non-flag args
-    positional = [a for a in args if not a.startswith("-")]
+    # Parse --type flag for send command
+    msg_type = "MSG"
+    for i, arg in enumerate(args):
+        if arg == "--type" and i + 1 < len(args):
+            msg_type = args[i + 1].upper()
+            break
+
+    # Get non-flag args (exclude flag values)
+    skip_next = False
+    positional = []
+    for i, a in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+        if a in ("--type", "--interval"):
+            skip_next = True
+            continue
+        if not a.startswith("-"):
+            positional.append(a)
 
     try:
         if cmd == "init":
@@ -333,7 +366,7 @@ def main():
             if not message:
                 result = {"error": "No message provided"}
             else:
-                result = send(session_id, message)
+                result = send(session_id, message, msg_type)
         elif cmd == "read":
             session_id = positional[0] if positional else get_auto_session_id()
             result = read(session_id, all_msgs, quiet)

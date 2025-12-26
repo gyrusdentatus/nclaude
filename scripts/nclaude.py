@@ -457,6 +457,31 @@ def main():
             else:
                 result = {"error": proc.stderr}
 
+        elif cmd == "chat":
+            # Interactive human chat mode
+            init()
+            print("\n" + "="*60)
+            print("  ★★★ HUMAN CHAT MODE ★★★")
+            print("  Messages will be marked [HUMAN] [BROADCAST]")
+            print("  Type 'quit' or Ctrl+C to exit")
+            print("="*60 + "\n")
+
+            try:
+                while True:
+                    try:
+                        msg = input("HUMAN> ")
+                        if msg.lower() in ('quit', 'exit', 'q'):
+                            print("Goodbye!")
+                            break
+                        if msg.strip():
+                            result = send("HUMAN", msg, "BROADCAST")
+                            print(f"  → Sent to all Claudes")
+                    except EOFError:
+                        break
+            except KeyboardInterrupt:
+                print("\nGoodbye!")
+            result = None  # Don't print JSON at end
+
         else:
             result = {"error": f"Unknown command: {cmd}"}
     except Exception as e:

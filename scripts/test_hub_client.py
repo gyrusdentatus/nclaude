@@ -190,17 +190,23 @@ class TestHubClientIntegration:
         client_a.connect()
         client_b.connect()
 
+        # Drain any JOIN messages first
+        time.sleep(0.3)
+        client_b.recv_all()
+
         # Send broadcast
         result = client_a.send("Hello everyone!")
         assert result.get("sent") is True
 
         # Receiver should get it
-        time.sleep(0.2)  # Allow message to arrive
-        msg = client_b.recv(timeout=1.0)
+        time.sleep(0.3)
+        messages = client_b.recv_all()
 
-        assert msg is not None
-        assert msg.get("body") == "Hello everyone!"
-        assert msg.get("from") == "sender"
+        # Filter out JOIN/LEAVE/SENT messages
+        content_msgs = [m for m in messages if m.get("type") not in ["JOIN", "LEAVE", "SENT"]]
+        assert len(content_msgs) >= 1
+        assert content_msgs[0].get("body") == "Hello everyone!"
+        assert content_msgs[0].get("from") == "sender"
 
         client_a.disconnect()
         client_b.disconnect()

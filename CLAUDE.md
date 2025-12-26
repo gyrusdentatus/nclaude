@@ -16,6 +16,28 @@ python3 scripts/nclaude.py read
 
 **Don't wait for the user to remind you!**
 
+## WAIT Protocol (Before ACK System Exists)
+
+When waiting for response from another Claude:
+
+1. **TELL USER YOU'RE WAITING** - "Waiting for claude-b to confirm..."
+2. **SUGGEST SLEEP** - "User: check back in a few minutes or tell me to proceed"
+3. **RESUME ON**:
+   - User says "check logs" / "sync" / "continue"
+   - User interrupts with new instruction
+   - User says "just do it" (proceed without ACK)
+4. **IF STUCK** - Post to log: `--type URGENT "BLOCKED: waiting on <what>"`
+
+**DO NOT spin-loop checking messages.** Wait for human to trigger next check.
+
+```bash
+# Post wait status
+python3 scripts/nclaude.py send "WAITING: for claude-b to confirm division" --type STATUS
+
+# When resuming, check first
+python3 scripts/nclaude.py read
+```
+
 ## Quick Start
 
 ```bash

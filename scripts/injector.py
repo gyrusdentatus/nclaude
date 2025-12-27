@@ -86,7 +86,8 @@ def inject_iterm(tty: str, message: str) -> bool:
                     set sessionTTY to tty of s
                     if sessionTTY contains "{tty}" then
                         tell s
-                            write text "{message}" newline yes
+                            -- write text with explicit newline character
+                            write text "{message}" & return
                         end tell
                         return true
                     end if

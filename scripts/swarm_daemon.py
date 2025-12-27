@@ -15,6 +15,8 @@ Usage:
     python3 swarm_daemon.py notify <session_name>                  # Resume to check messages
     python3 swarm_daemon.py watch                                  # Daemon mode
     python3 swarm_daemon.py list                                   # List sessions
+    python3 swarm_daemon.py swarm <n> <task>                       # Spawn N Claudes to divide work
+    python3 swarm_daemon.py ask <session_name> <question>          # Ask and show answer
 """
 
 import json
@@ -211,6 +213,103 @@ def list_sessions():
     print(json.dumps(registry["sessions"], indent=2))
 
 
+def ask_claude(session_name: str, question: str, timeout: int = 120) -> str:
+    """
+    Spawn Claude with a question and return the actual answer text.
+    Useful for humans to see what Claude responds.
+    """
+    cmd = [
+        CLAUDE_BINARY,
+        "-p", question,
+        "--output-format", "stream-json",
+        "--dangerously-skip-permissions"
+    ]
+
+    env = os.environ.copy()
+    env["NCLAUDE_ID"] = session_name
+
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=os.getcwd(),
+            env=env
+        )
+
+        # Parse JSONL to extract assistant message content
+        answer_parts = []
+        session_id = None
+        for line in result.stdout.splitlines():
+            try:
+                data = json.loads(line)
+                if "session_id" in data:
+                    session_id = data["session_id"]
+                # Look for assistant message content
+                if data.get("type") == "assistant" and "message" in data:
+                    msg = data["message"]
+                    if "content" in msg:
+                        for block in msg["content"]:
+                            if block.get("type") == "text":
+                                answer_parts.append(block.get("text", ""))
+            except Exception:
+                continue
+
+        if session_id:
+            register_session(session_name, session_id)
+
+        return "\n".join(answer_parts) if answer_parts else "(no text response)"
+
+    except subprocess.TimeoutExpired:
+        return "(timeout)"
+    except Exception as e:
+        return f"(error: {e})"
+
+
+def swarm_spawn(n: int, task: str, timeout: int = 180):
+    """
+    Spawn N Claudes to divide work on a task.
+    Each Claude gets assigned a portion of the work.
+    """
+    import concurrent.futures
+
+    print(f"Spawning {n} Claudes to work on: {task[:60]}...")
+    print("-" * 60)
+
+    def spawn_worker(i: int) -> dict:
+        agent_name = f"swarm-{i}"
+        prompt = f"""You are swarm agent {i} of {n}.
+
+TASK TO DIVIDE: {task}
+
+Your job is to handle part {i}/{n} of this task. Coordinate via nclaude:
+- First check messages: python3 scripts/nclaude.py read
+- Claim your portion: python3 scripts/nclaude.py send "CLAIMING part {i}/{n}: <what you're doing>"
+- When done: python3 scripts/nclaude.py send "DONE part {i}/{n}: <result>"
+
+Be concise. Focus on your portion only."""
+
+        result = spawn_claude(agent_name, prompt, timeout=timeout)
+        return {"agent": agent_name, **result}
+
+    # Spawn all in parallel
+    results = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=n) as executor:
+        futures = [executor.submit(spawn_worker, i) for i in range(1, n + 1)]
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            print(f"  {result['agent']}: {'OK' if result.get('success') else 'FAILED'}")
+            results.append(result)
+
+    print("-" * 60)
+    print(f"Spawned {sum(1 for r in results if r.get('success'))}/{n} agents successfully")
+    print("\nTo see their work: tail -f /tmp/nclaude/*/messages.log")
+    print("To resume an agent: python3 scripts/swarm_daemon.py resume swarm-1 'continue'")
+
+    return results
+
+
 def watch_daemon(interval: int = 5):
     """
     Daemon mode: monitor messages.log and trigger resumes for relevant sessions.
@@ -335,6 +434,26 @@ def main():
     elif cmd == "watch":
         interval = int(sys.argv[2]) if len(sys.argv) > 2 else 5
         watch_daemon(interval)
+
+    elif cmd == "swarm":
+        if len(sys.argv) < 4:
+            print("Usage: swarm_daemon.py swarm <n> <task description>")
+            print("Example: swarm_daemon.py swarm 4 'Review all Python files in src/'")
+            sys.exit(1)
+        n = int(sys.argv[2])
+        task = " ".join(sys.argv[3:])
+        swarm_spawn(n, task)
+
+    elif cmd == "ask":
+        if len(sys.argv) < 4:
+            print("Usage: swarm_daemon.py ask <session_name> <question>")
+            print("Example: swarm_daemon.py ask test 'What is 2+2?'")
+            sys.exit(1)
+        answer = ask_claude(sys.argv[2], " ".join(sys.argv[3:]))
+        print(f"\n{'='*60}")
+        print(f"Answer from {sys.argv[2]}:")
+        print(f"{'='*60}")
+        print(answer)
 
     else:
         print(f"Unknown command: {cmd}")

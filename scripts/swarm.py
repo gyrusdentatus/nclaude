@@ -19,7 +19,28 @@ from pathlib import Path
 
 CLAUDE_BIN = os.path.expanduser("~/.claude/local/node_modules/.bin/claude")
 NCLAUDE_SCRIPT = Path(__file__).parent / "nclaude.py"
-SESSION_FILE = Path("/tmp/nclaude/swarm_sessions.json")
+
+
+def get_nclaude_dir() -> Path:
+    """Get git-aware nclaude directory (shared across worktrees)"""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True, text=True, timeout=5
+        )
+        if result.returncode == 0:
+            repo_name = Path(result.stdout.strip()).name
+            return Path(f"/tmp/nclaude/{repo_name}")
+    except Exception:
+        pass
+    return Path("/tmp/nclaude")
+
+
+def get_session_file() -> Path:
+    """Get path to swarm sessions file"""
+    nclaude_dir = get_nclaude_dir()
+    nclaude_dir.mkdir(parents=True, exist_ok=True)
+    return nclaude_dir / "swarm_sessions.json"
 
 
 def run_nclaude(cmd, *args):
@@ -27,7 +48,7 @@ def run_nclaude(cmd, *args):
     result = subprocess.run(
         ["python3", str(NCLAUDE_SCRIPT), cmd] + list(args),
         capture_output=True, text=True, timeout=30,
-        env={**os.environ, "NCLAUDE_DIR": "/tmp/nclaude"}
+        env={**os.environ, "NCLAUDE_DIR": str(get_nclaude_dir())}
     )
     if result.stdout:
         try:
@@ -44,7 +65,6 @@ def spawn_agent(agent_id: str, task: str, timeout: int = 120) -> dict:
     cmd = [
         CLAUDE_BIN,
         "-p", task,
-        "--output-format", "stream-json",
         "--dangerously-skip-permissions"
     ]
 
@@ -61,31 +81,18 @@ def spawn_agent(agent_id: str, task: str, timeout: int = 120) -> dict:
             env=env
         )
 
-        # Parse output for session_id and response
-        session_id = None
-        response_text = []
+        # Parse plain text output
+        response_text = result.stdout.strip()
 
-        for line in result.stdout.splitlines():
-            try:
-                data = json.loads(line)
-                if "session_id" in data:
-                    session_id = data["session_id"]
-                if data.get("type") == "assistant" and "message" in data:
-                    # Extract text content
-                    msg = data["message"]
-                    if isinstance(msg, dict) and "content" in msg:
-                        for block in msg["content"]:
-                            if block.get("type") == "text":
-                                response_text.append(block.get("text", ""))
-            except:
-                continue
+        # Session ID comes from the environment, not output
+        session_id = agent_id  # Use agent_id as session reference
 
-        print(f"[{agent_id}] Completed. Session: {session_id[:8] if session_id else 'N/A'}...")
+        print(f"[{agent_id}] Completed.")
 
         return {
             "agent_id": agent_id,
             "session_id": session_id,
-            "response": "\n".join(response_text),
+            "response": response_text,
             "returncode": result.returncode,
             "success": result.returncode == 0
         }
@@ -160,8 +167,8 @@ def spawn_swarm(main_task: str, num_agents: int = 4, timeout: int = 120):
 
     # Save session info for later resume
     sessions = {r["agent_id"]: r.get("session_id") for r in results if r.get("session_id")}
-    SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
-    SESSION_FILE.write_text(json.dumps(sessions, indent=2))
+    session_file = get_session_file()
+    session_file.write_text(json.dumps(sessions, indent=2))
 
     # Print summary
     print("\n" + "=" * 60)
@@ -179,7 +186,7 @@ def spawn_swarm(main_task: str, num_agents: int = 4, timeout: int = 120):
             resp = r["response"][:200].replace("\n", " ")
             print(f"      Response: {resp}...")
 
-    print(f"\nSessions saved to: {SESSION_FILE}")
+    print(f"\nSessions saved to: {session_file}")
 
     return results
 
@@ -221,8 +228,9 @@ def check_status():
     print("=" * 60)
 
     # Load saved sessions
-    if SESSION_FILE.exists():
-        sessions = json.loads(SESSION_FILE.read_text())
+    session_file = get_session_file()
+    if session_file.exists():
+        sessions = json.loads(session_file.read_text())
         print(f"\nSaved sessions ({len(sessions)}):")
         for agent_id, session_id in sessions.items():
             print(f"  {agent_id}: {session_id}")
@@ -237,19 +245,39 @@ def check_status():
             print(f"  {msg[:80]}...")
 
 
+def resume_all(prompt: str):
+    """Resume all saved sessions with a new prompt"""
+    session_file = get_session_file()
+    if not session_file.exists():
+        print("No saved sessions to resume")
+        return
+
+    sessions = json.loads(session_file.read_text())
+
+    print(f"Resuming {len(sessions)} agents with: {prompt[:50]}...")
+
+    with ThreadPoolExecutor(max_workers=len(sessions)) as executor:
+        futures = [
+            executor.submit(resume_agent, agent_id, session_id, prompt)
+            for agent_id, session_id in sessions.items()
+        ]
+
+        for future in as_completed(futures):
+            result = future.result()
+            status = "✓" if result.get("success") else "✗"
+            print(f"  {status} {result.get('agent_id')}")
+
+
 def kill_swarm():
     """Kill any running swarm processes"""
     import signal
-
     print("Looking for swarm processes...")
     killed = 0
-
     try:
         result = subprocess.run(
             ["pgrep", "-f", "NCLAUDE_ID=swarm"],
             capture_output=True, text=True
         )
-
         for pid in result.stdout.strip().split("\n"):
             if pid:
                 try:
@@ -265,28 +293,6 @@ def kill_swarm():
         print("No swarm processes found (they auto-exit after completing)")
     else:
         print(f"Killed {killed} processes")
-
-
-def resume_all(prompt: str):
-    """Resume all saved sessions with a new prompt"""
-    if not SESSION_FILE.exists():
-        print("No saved sessions to resume")
-        return
-
-    sessions = json.loads(SESSION_FILE.read_text())
-
-    print(f"Resuming {len(sessions)} agents with: {prompt[:50]}...")
-
-    with ThreadPoolExecutor(max_workers=len(sessions)) as executor:
-        futures = [
-            executor.submit(resume_agent, agent_id, session_id, prompt)
-            for agent_id, session_id in sessions.items()
-        ]
-
-        for future in as_completed(futures):
-            result = future.result()
-            status = "✓" if result.get("success") else "✗"
-            print(f"  {status} {result.get('agent_id')}")
 
 
 def main():

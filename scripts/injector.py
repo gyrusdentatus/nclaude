@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# DEPRECATED: Use cdp_injector.js instead for REAL V8 memory injection
+# This AppleScript approach is amateur bullshit - kept for reference only
 """nclaude injector - Push notifications via TTY injection
 
 Monitors messages.log and injects 'check logs' into idle Claude sessions.

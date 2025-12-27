@@ -151,14 +151,21 @@ def spawn_claude(session_name: str, prompt: str, timeout: int = 120) -> dict:
             env=env
         )
 
-        # Parse JSONL output to find session ID
+        # Parse JSONL output to find session ID and response text
         session_id = None
+        response_parts = []
         for line in result.stdout.splitlines():
             try:
                 data = json.loads(line)
                 if "session_id" in data:
                     session_id = data["session_id"]
-                    break
+                # Extract assistant message content
+                if data.get("type") == "assistant" and "message" in data:
+                    msg = data["message"]
+                    if "content" in msg:
+                        for block in msg["content"]:
+                            if block.get("type") == "text":
+                                response_parts.append(block.get("text", ""))
             except Exception:
                 continue
 
@@ -170,7 +177,8 @@ def spawn_claude(session_name: str, prompt: str, timeout: int = 120) -> dict:
             "session_name": session_name,
             "session_id": session_id,
             "returncode": result.returncode,
-            "success": result.returncode == 0 and session_id is not None
+            "success": result.returncode == 0 and session_id is not None,
+            "response": "\n".join(response_parts) if response_parts else None
         }
 
     except subprocess.TimeoutExpired:
@@ -335,6 +343,14 @@ Be concise. Focus on your portion only."""
             agent = result['agent']
             status = f"{COLORS['bold']}OK{COLORS['reset']}" if result.get('success') else f"{COLORS['bold']}\033[91mFAILED{COLORS['reset']}"
             print(f"  {colorize(agent, agent)}: {status}")
+
+            # Show response preview (first 200 chars)
+            if result.get('response'):
+                preview = result['response'][:200].replace('\n', ' ')
+                if len(result['response']) > 200:
+                    preview += "..."
+                print(f"    {COLORS['dim']}{preview}{COLORS['reset']}")
+
             results.append(result)
 
     print("-" * 60)

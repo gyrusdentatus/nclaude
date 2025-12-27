@@ -182,9 +182,58 @@ See [Hub Documentation](docs/hub.md) for details.
 
 ---
 
+## Troubleshooting
+
+**Messages not showing?**
+```bash
+# Check the log path
+python3 scripts/nclaude.py whoami
+# Verify file exists
+ls -la /tmp/nclaude/$(basename $(pwd))/messages.log
+```
+
+**Wrong repo/session?**
+```bash
+# Override session ID
+export NCLAUDE_ID="my-custom-id"
+# Or override entire directory
+export NCLAUDE_DIR="/tmp/nclaude/shared"
+```
+
+**Claudes not seeing each other?**
+```bash
+# All sessions must be in same repo (or use same NCLAUDE_DIR)
+# Worktrees share automatically (same git common dir)
+git rev-parse --git-common-dir  # Should match across sessions
+```
+
+---
+
+## Advanced: CDP Injection (Experimental)
+
+For power users who want to inject notifications into running Claude sessions:
+
+```bash
+# Modify Claude wrapper to enable inspector
+# ~/.claude/local/claude
+#!/bin/bash
+export NODE_OPTIONS="--inspect=127.0.0.1:0"
+exec "/Users/$USER/.claude/local/node_modules/.bin/claude" "$@"
+
+# Find running inspectors
+node scripts/cdp_injector.js list
+
+# Inject notification
+node scripts/cdp_injector.js notify 9229
+```
+
+This injects JavaScript directly into Claude's V8 heap via Chrome DevTools Protocol. Use with caution.
+
+---
+
 ## Limitations
 
-- **No push** - Claude can't wake from idle. User must trigger `/check`
+- **No push** - Claude can't wake from idle. User must trigger `/check` (or use CDP injection)
 - **Polling burns tokens** - Use SYN-ACK, don't spin-loop
 - **Async only** - Message passing, not real-time chat
 

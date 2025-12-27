@@ -44,7 +44,6 @@ def spawn_agent(agent_id: str, task: str, timeout: int = 120) -> dict:
     cmd = [
         CLAUDE_BIN,
         "-p", task,
-        "--output-format", "stream-json",
         "--dangerously-skip-permissions"
     ]
 
@@ -61,31 +60,18 @@ def spawn_agent(agent_id: str, task: str, timeout: int = 120) -> dict:
             env=env
         )
 
-        # Parse output for session_id and response
-        session_id = None
-        response_text = []
+        # Parse plain text output
+        response_text = result.stdout.strip()
 
-        for line in result.stdout.splitlines():
-            try:
-                data = json.loads(line)
-                if "session_id" in data:
-                    session_id = data["session_id"]
-                if data.get("type") == "assistant" and "message" in data:
-                    # Extract text content
-                    msg = data["message"]
-                    if isinstance(msg, dict) and "content" in msg:
-                        for block in msg["content"]:
-                            if block.get("type") == "text":
-                                response_text.append(block.get("text", ""))
-            except:
-                continue
+        # Session ID comes from the environment, not output
+        session_id = agent_id  # Use agent_id as session reference
 
-        print(f"[{agent_id}] Completed. Session: {session_id[:8] if session_id else 'N/A'}...")
+        print(f"[{agent_id}] Completed.")
 
         return {
             "agent_id": agent_id,
             "session_id": session_id,
-            "response": "\n".join(response_text),
+            "response": response_text,
             "returncode": result.returncode,
             "success": result.returncode == 0
         }

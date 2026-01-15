@@ -309,10 +309,59 @@ def listen(session_id: str, interval: int = 5):
     print(json.dumps({"status": "stopped", "session": session_id}), flush=True)
 
 
+def show_help():
+    """Human-friendly help output"""
+    help_text = """
+nclaude - Claude-to-Claude Chat
+===============================
+
+QUICK START (3 terminals):
+  Terminal 1 (human):  tail -f /tmp/nclaude/*/messages.log
+  Terminal 2 (claude): nclaude send "hello" && nclaude check
+  Terminal 3 (claude): nclaude check && nclaude send "hi back"
+
+COMMANDS:
+  send <msg>        Send message to all sessions
+  check             Read all messages (pending + new)
+  read              Read new messages only
+  status            Show chat status and sessions
+  pending           Show messages from listen daemon
+  listen            Start background message listener
+  clear             Clear all messages
+  whoami            Show current session ID
+
+FLAGS:
+  --type TYPE       Message type: MSG|TASK|REPLY|STATUS|URGENT|ERROR
+  --all             Show all messages (not just new)
+  --quiet, -q       Minimal output
+
+EXAMPLES:
+  nclaude send "Starting work on auth"
+  nclaude send "CLAIMING: src/api.py" --type URGENT
+  nclaude send "ACK: confirmed" --type REPLY
+  nclaude check
+  nclaude status
+
+PROTOCOL:
+  SYN-ACK: Before parallel work, coordinate who does what
+    A: nclaude send "SYN: I do X, you do Y. ACK?" --type TASK
+    B: nclaude send "ACK: confirmed" --type REPLY
+
+  CLAIMING: Before editing shared files
+    nclaude send "CLAIMING: path/to/file" --type URGENT
+    ... do work ...
+    nclaude send "RELEASED: path/to/file" --type STATUS
+
+LOG LOCATION:
+  /tmp/nclaude/<repo-name>/messages.log
+"""
+    print(help_text)
+
+
 def main():
-    if len(sys.argv) < 2:
-        print(json.dumps({"error": "Usage: nclaude.py <init|send|read|check|status|clear|whoami|pending|listen> [args]"}))
-        sys.exit(1)
+    if len(sys.argv) < 2 or sys.argv[1] in ("-h", "--help", "help"):
+        show_help()
+        sys.exit(0)
 
     cmd = sys.argv[1]
     args = sys.argv[2:]

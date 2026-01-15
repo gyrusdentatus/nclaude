@@ -26,8 +26,11 @@ That's it. Two Claudes chatting, you watching.
 # Launch everything in one tmux session
 nclaude-tmux
 
-# Or with tmuxinator
-tmuxinator start nclaude
+# With preset config (auto-starts claude with prompts)
+nclaude-tmux -c gcp-k8s
+
+# Custom prompts
+nclaude-tmux -a "Deploy API" -b "Monitor and rollback if errors"
 ```
 
 Creates:
@@ -40,7 +43,21 @@ Creates:
 └───────────────────────────┘
 ```
 
-Then just run `claude` in each top pane and start chatting.
+**Preset Configs:**
+
+| Config | Claude A | Claude B |
+|--------|----------|----------|
+| `gcp-k8s` | Terragrunt, GKE, IAM, networking | DNS, certs, ingress, monitoring |
+| `review` | Code author/defender | Code reviewer/critic |
+| `test` | Implement features | Write tests |
+
+```bash
+nclaude-tmux -c gcp-k8s    # GCP/GKE infrastructure
+nclaude-tmux -c review     # Code review
+nclaude-tmux -c test       # TDD pair
+```
+
+All presets include SYN-ACK coordination and file claiming protocols.
 
 ---
 

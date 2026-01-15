@@ -10,6 +10,10 @@ dependencies = []
 mcp = ["mcp"]
 dev = ["pytest>=7.0"]
 
+[project.scripts]
+nclaude = "scripts.nclaude:main"
+swarm = "scripts.swarm_daemon:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

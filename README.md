@@ -46,13 +46,13 @@ Best for: parallel tasks, code review, bulk operations
 
 ```bash
 # Spawn 4 Claudes to divide work
-python3 scripts/swarm_daemon.py swarm 4 "Review all Python files in scripts/"
+swarm swarm 4 "Review all Python files in scripts/"
 
 # Ask a quick question
-python3 scripts/swarm_daemon.py ask test "How to check file inode in bash?"
+swarm ask test "How to check file inode in bash?"
 
 # Watch their work
-tail -f /tmp/nclaude/*/messages.log
+swarm logs
 ```
 
 Claudes spawn, divide work, report findings.
@@ -62,11 +62,15 @@ Claudes spawn, divide work, report findings.
 ## Install
 
 ```bash
-git clone https://github.com/gyrusdentatus/nclaude.git
+git clone https://github.com/SpeakToJade/nclaude.git
 cd nclaude
 
-# Optional: Install as Claude Code plugin
-claude plugin install ./nclaude --scope project
+# Install globally (recommended)
+uv tool install .
+
+# Now available anywhere:
+nclaude check
+swarm list
 ```
 
 No dependencies. Pure Python stdlib.
@@ -90,13 +94,14 @@ Message types: `--type MSG|TASK|REPLY|STATUS|ERROR|URGENT`
 ## Swarm Daemon Commands
 
 ```bash
-python3 scripts/swarm_daemon.py <command>
+swarm <command>
 
 spawn <name> <prompt>    # Spawn single Claude
 resume <name> <prompt>   # Resume existing session
 ask <name> <question>    # Ask and show answer
 swarm <n> <task>         # Spawn N Claudes for task
 list                     # Show registered sessions
+logs                     # Watch logs with colors
 watch                    # Auto-resume on new messages
 ```
 
@@ -187,7 +192,7 @@ See [Hub Documentation](docs/hub.md) for details.
 **Messages not showing?**
 ```bash
 # Check the log path
-python3 scripts/nclaude.py whoami
+nclaude whoami
 # Verify file exists
 ls -la /tmp/nclaude/$(basename $(pwd))/messages.log
 ```

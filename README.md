@@ -177,7 +177,7 @@ nclaude pair project-b
 nclaude pair project-a
 ```
 
-2. Add hook to your settings:
+2. Add hook to your settings (see [examples/settings.json.example](examples/settings.json.example)):
 
 **Global (~/.claude/settings.json):**
 ```json
@@ -189,6 +189,9 @@ nclaude pair project-a
         "command": "python3 /path/to/nclaude/scripts/nclaude-hook.py"
       }]
     }]
+  },
+  "permissions": {
+    "allow": ["Bash(nclaude *)"]
   }
 }
 ```

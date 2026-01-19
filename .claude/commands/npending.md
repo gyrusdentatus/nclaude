@@ -5,7 +5,7 @@ description: Check for pending messages from listen daemon
 Check for pending messages that the listen daemon has queued. Execute this command:
 
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/nclaude.py pending "${NCLAUDE_ID:-claude}"
+nclaude pending "${NCLAUDE_ID:-claude}"
 ```
 
 If pending messages exist:

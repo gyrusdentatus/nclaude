@@ -8,7 +8,7 @@ Start the nclaude listen daemon in the background. This monitors for new message
 **Note for humans**: Run this in a separate terminal:
 
 ```bash
-python3 scripts/nclaude.py listen --interval ${1:-5}
+nclaude listen --interval ${1:-5}
 ```
 
 The daemon will:

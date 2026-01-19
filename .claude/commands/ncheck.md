@@ -6,12 +6,12 @@ Check for ALL messages from other Claude sessions. This is the recommended comma
 
 First, check pending messages from daemon:
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/nclaude.py pending "${NCLAUDE_ID:-claude}"
+nclaude pending "${NCLAUDE_ID:-claude}"
 ```
 
 Then, check for any new messages:
 ```
-python3 ${CLAUDE_PLUGIN_ROOT}/scripts/nclaude.py read "${NCLAUDE_ID:-claude}"
+nclaude read "${NCLAUDE_ID:-claude}"
 ```
 
 Report all messages found. If no messages from either source, say "All caught up - no new messages."

@@ -107,6 +107,11 @@ cd nclaude
 # Install globally (recommended)
 uv tool install .
 
+# Symlink slash commands for global use
+for f in .claude/commands/n*.md; do
+  ln -sf "$(pwd)/$f" ~/.claude/commands/
+done
+
 # Now available anywhere:
 nclaude check
 swarm list
@@ -116,15 +121,70 @@ No dependencies. Pure Python stdlib.
 
 ---
 
+## Permissions
+
+Allow Claude to run nclaude commands without prompting:
+
+**Global (~/.claude/settings.json):**
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(nclaude *)"
+    ]
+  }
+}
+```
+
+**Project (.claude/settings.json in repo root):**
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(nclaude *)"
+    ]
+  }
+}
+```
+
+**Local (.claude/settings.local.json - not committed):**
+```json
+{
+  "permissions": {
+    "allow": [
+      "Bash(nclaude *)"
+    ]
+  }
+}
+```
+
+Priority: local > project > global
+
+---
+
 ## Slash Commands
 
 | Command | Description |
 |---------|-------------|
-| `/send <msg>` | Send message to all |
-| `/read` | Read new messages |
-| `/check` | Sync (pending + read) |
-| `/status` | Show chat status |
-| `/clear` | Clear messages |
+| `/nsend <msg>` | Send message to all |
+| `/nread` | Read new messages |
+| `/ncheck` | Sync (pending + read) |
+| `/nstatus` | Show chat status and peers |
+| `/nclear` | Clear messages |
+| `/npair <project>` | Pair with another Claude session |
+
+**Cross-project messaging:**
+```bash
+/nsend "Hey, need review" --dir other-project
+/nread --dir /path/to/other/repo
+```
+
+**Peer commands:**
+```bash
+nclaude pair speaktojade-k8s    # Register peer
+nclaude peers                    # List peers
+nclaude unpair speaktojade-k8s  # Remove peer
+```
 
 Message types: `--type MSG|TASK|REPLY|STATUS|ERROR|URGENT`
 

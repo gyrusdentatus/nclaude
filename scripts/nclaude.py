@@ -85,6 +85,9 @@ LOCK = BASE / ".lock"
 SESSIONS = BASE / "sessions"
 PENDING = BASE / "pending"
 
+# Global peers file (shared across all projects)
+PEERS_FILE = Path("/tmp/nclaude/.peers")
+
 
 def set_base_dir(path):
     """Override base directory (for cross-project messaging)"""
@@ -94,6 +97,88 @@ def set_base_dir(path):
     LOCK = BASE / ".lock"
     SESSIONS = BASE / "sessions"
     PENDING = BASE / "pending"
+
+
+def get_current_project():
+    """Get current project name from BASE path"""
+    return BASE.name
+
+
+def load_peers():
+    """Load peers from global peers file"""
+    if not PEERS_FILE.exists():
+        return {}
+    try:
+        return json.loads(PEERS_FILE.read_text())
+    except (json.JSONDecodeError, IOError):
+        return {}
+
+
+def save_peers(peers):
+    """Save peers to global peers file"""
+    PEERS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PEERS_FILE.write_text(json.dumps(peers, indent=2))
+
+
+def pair(target_project):
+    """Register a peer relationship"""
+    current = get_current_project()
+    peers = load_peers()
+
+    # Add bidirectional pairing
+    if current not in peers:
+        peers[current] = []
+    if target_project not in peers[current]:
+        peers[current].append(target_project)
+
+    if target_project not in peers:
+        peers[target_project] = []
+    if current not in peers[target_project]:
+        peers[target_project].append(current)
+
+    save_peers(peers)
+    return {
+        "status": "paired",
+        "project": current,
+        "peer": target_project,
+        "all_peers": peers[current]
+    }
+
+
+def unpair(target_project=None):
+    """Remove a peer relationship (or all if target is None)"""
+    current = get_current_project()
+    peers = load_peers()
+
+    if target_project:
+        # Remove specific peer
+        if current in peers and target_project in peers[current]:
+            peers[current].remove(target_project)
+        if target_project in peers and current in peers[target_project]:
+            peers[target_project].remove(current)
+        save_peers(peers)
+        return {"status": "unpaired", "project": current, "removed": target_project}
+    else:
+        # Remove all peers for current project
+        removed = peers.pop(current, [])
+        # Also remove current from other projects' peer lists
+        for proj in peers:
+            if current in peers[proj]:
+                peers[proj].remove(current)
+        save_peers(peers)
+        return {"status": "unpaired_all", "project": current, "removed": removed}
+
+
+def list_peers():
+    """List all peers for current project"""
+    current = get_current_project()
+    peers = load_peers()
+    my_peers = peers.get(current, [])
+    return {
+        "project": current,
+        "peers": my_peers,
+        "all_pairings": peers
+    }
 
 
 def init():
@@ -177,8 +262,19 @@ def read(session_id: str, all_messages: bool = False, quiet: bool = False):
 
 def status():
     """Get chat status"""
+    current = get_current_project()
+    peers = load_peers()
+    my_peers = peers.get(current, [])
+
     if not BASE.exists() or not LOG.exists():
-        return {"active": False, "message_count": 0, "sessions": [], "log_path": str(LOG)}
+        return {
+            "active": False,
+            "project": current,
+            "message_count": 0,
+            "sessions": [],
+            "peers": my_peers,
+            "log_path": str(LOG)
+        }
 
     lines = LOG.read_text().splitlines()
     sessions = []
@@ -187,8 +283,10 @@ def status():
 
     return {
         "active": True,
+        "project": current,
         "message_count": len(lines),
         "sessions": sessions,
+        "peers": my_peers,
         "log_path": str(LOG)
     }
 
@@ -334,11 +432,14 @@ COMMANDS:
   send <msg>        Send message to all sessions
   check             Read all messages (pending + new)
   read              Read new messages only
-  status            Show chat status and sessions
+  status            Show chat status, sessions, and peers
   pending           Show messages from listen daemon
   listen            Start background message listener
   clear             Clear all messages
   whoami            Show current session ID
+  pair <project>    Register peer for coordination
+  unpair [project]  Remove peer (or all peers)
+  peers             List current peers
 
 FLAGS:
   --dir, -d NAME    Target different project (name or path)
@@ -350,6 +451,9 @@ EXAMPLES:
   nclaude send "Starting work on auth"
   nclaude send "Need review" --dir other-project
   nclaude read --dir /path/to/other/repo
+  nclaude pair speaktojade-k8s            # register peer
+  nclaude peers                            # list my peers
+  nclaude unpair speaktojade-k8s          # remove specific peer
   nclaude send "CLAIMING: src/api.py" --type URGENT
   nclaude send "ACK: confirmed" --type REPLY
   nclaude check
@@ -460,6 +564,23 @@ def main():
             result = status()
         elif cmd == "clear":
             result = clear()
+        elif cmd == "pair":
+            if not positional:
+                result = {"error": "Usage: nclaude pair <project-name>"}
+            else:
+                target = positional[0]
+                current = get_current_project()  # Save before changing base
+                result = pair(target)
+                # Also send a PAIRED message to the target
+                original_base = str(BASE)
+                set_base_dir(f"/tmp/nclaude/{target}")
+                send(get_auto_session_id(), f"PAIRED: {current} is now paired with you", "STATUS")
+                set_base_dir(original_base)
+        elif cmd == "unpair":
+            target = positional[0] if positional else None
+            result = unpair(target)
+        elif cmd == "peers":
+            result = list_peers()
         elif cmd == "broadcast":
             # Send a single message visible to all sessions
             message = " ".join(positional) if positional else ""

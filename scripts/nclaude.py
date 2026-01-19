@@ -78,12 +78,22 @@ def get_auto_session_id():
     return "claude"
 
 
-# Initialize paths
+# Initialize paths (can be overridden with --dir)
 BASE = get_base_dir()
 LOG = BASE / "messages.log"
 LOCK = BASE / ".lock"
 SESSIONS = BASE / "sessions"
 PENDING = BASE / "pending"
+
+
+def set_base_dir(path):
+    """Override base directory (for cross-project messaging)"""
+    global BASE, LOG, LOCK, SESSIONS, PENDING
+    BASE = Path(path)
+    LOG = BASE / "messages.log"
+    LOCK = BASE / ".lock"
+    SESSIONS = BASE / "sessions"
+    PENDING = BASE / "pending"
 
 
 def init():
@@ -331,12 +341,15 @@ COMMANDS:
   whoami            Show current session ID
 
 FLAGS:
+  --dir, -d NAME    Target different project (name or path)
   --type TYPE       Message type: MSG|TASK|REPLY|STATUS|URGENT|ERROR
   --all             Show all messages (not just new)
   --quiet, -q       Minimal output
 
 EXAMPLES:
   nclaude send "Starting work on auth"
+  nclaude send "Need review" --dir other-project
+  nclaude read --dir /path/to/other/repo
   nclaude send "CLAIMING: src/api.py" --type URGENT
   nclaude send "ACK: confirmed" --type REPLY
   nclaude check
@@ -366,6 +379,30 @@ def main():
     cmd = sys.argv[1]
     args = sys.argv[2:]
 
+    # Parse --dir flag first (for cross-project messaging)
+    for i, arg in enumerate(args):
+        if arg in ("--dir", "-d") and i + 1 < len(args):
+            target_dir = args[i + 1]
+            # Resolve relative to /tmp/nclaude/ if just a name, otherwise use as path
+            if "/" not in target_dir:
+                set_base_dir(f"/tmp/nclaude/{target_dir}")
+            else:
+                # It's a path - get the git repo name from it
+                try:
+                    result = subprocess.run(
+                        ["git", "-C", target_dir, "rev-parse", "--show-toplevel"],
+                        capture_output=True, text=True, timeout=5
+                    )
+                    if result.returncode == 0:
+                        repo_name = Path(result.stdout.strip()).name
+                        set_base_dir(f"/tmp/nclaude/{repo_name}")
+                    else:
+                        # Not a git repo, use directory name
+                        set_base_dir(f"/tmp/nclaude/{Path(target_dir).name}")
+                except Exception:
+                    set_base_dir(f"/tmp/nclaude/{Path(target_dir).name}")
+            break
+
     # Parse flags
     quiet = "--quiet" in args or "-q" in args
     all_msgs = "--all" in args
@@ -384,7 +421,7 @@ def main():
         if skip_next:
             skip_next = False
             continue
-        if a in ("--type", "--interval"):
+        if a in ("--type", "--interval", "--dir", "-d"):
             skip_next = True
             continue
         if not a.startswith("-"):

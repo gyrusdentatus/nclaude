@@ -1,6 +1,5 @@
 {
   "name": "nclaude",
   "version": "2.1.0",
-  "description": "Claude-to-Claude messaging for multi-session coordination",
-  "commands": ".claude/commands"
+  "description": "Claude-to-Claude messaging for multi-session coordination"
 }

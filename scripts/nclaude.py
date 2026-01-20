@@ -20,6 +20,7 @@ def get_git_info():
     """Get git repo info for smart defaults"""
     try:
         # Get git common dir (works for worktrees too)
+        # For worktrees, this points to main repo's .git dir
         git_common = subprocess.run(
             ["git", "rev-parse", "--git-common-dir"],
             capture_output=True, text=True, timeout=5
@@ -29,12 +30,19 @@ def get_git_info():
 
         common_dir = Path(git_common.stdout.strip()).resolve()
 
-        # Get repo root (for regular repos, parent of .git; for worktrees, the main worktree)
-        repo_root = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=5
-        )
-        repo_name = Path(repo_root.stdout.strip()).name if repo_root.returncode == 0 else "unknown"
+        # Derive repo name from common_dir (works for both regular repos and worktrees)
+        # common_dir is either:
+        #   - /path/to/repo/.git (regular repo) -> repo name is parent.name
+        #   - /path/to/repo/.git (from worktree) -> same, repo name is parent.name
+        if common_dir.name == ".git":
+            repo_name = common_dir.parent.name
+        else:
+            # Fallback to show-toplevel if common_dir structure is unexpected
+            repo_root = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, timeout=5
+            )
+            repo_name = Path(repo_root.stdout.strip()).name if repo_root.returncode == 0 else "unknown"
 
         # Get current branch
         branch = subprocess.run(

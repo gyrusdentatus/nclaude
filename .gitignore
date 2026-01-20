@@ -1,6 +1,9 @@
 # Claude Code local settings (not the whole dir, just local stuff)
 .claude/settings.local.json
 
+# Local dev files (test scripts, notes, etc)
+.local/
+
 # Environment
 .env
 .env.*

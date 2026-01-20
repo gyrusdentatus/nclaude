@@ -20,6 +20,7 @@ def get_git_info():
     """Get git repo info for smart defaults"""
     try:
         # Get git common dir (works for worktrees too)
+        # For worktrees, this points to main repo's .git dir
         git_common = subprocess.run(
             ["git", "rev-parse", "--git-common-dir"],
             capture_output=True, text=True, timeout=5
@@ -29,12 +30,19 @@ def get_git_info():
 
         common_dir = Path(git_common.stdout.strip()).resolve()
 
-        # Get repo root (for regular repos, parent of .git; for worktrees, the main worktree)
-        repo_root = subprocess.run(
-            ["git", "rev-parse", "--show-toplevel"],
-            capture_output=True, text=True, timeout=5
-        )
-        repo_name = Path(repo_root.stdout.strip()).name if repo_root.returncode == 0 else "unknown"
+        # Derive repo name from common_dir (works for both regular repos and worktrees)
+        # common_dir is either:
+        #   - /path/to/repo/.git (regular repo) -> repo name is parent.name
+        #   - /path/to/repo/.git (from worktree) -> same, repo name is parent.name
+        if common_dir.name == ".git":
+            repo_name = common_dir.parent.name
+        else:
+            # Fallback to show-toplevel if common_dir structure is unexpected
+            repo_root = subprocess.run(
+                ["git", "rev-parse", "--show-toplevel"],
+                capture_output=True, text=True, timeout=5
+            )
+            repo_name = Path(repo_root.stdout.strip()).name if repo_root.returncode == 0 else "unknown"
 
         # Get current branch
         branch = subprocess.run(
@@ -417,6 +425,97 @@ def listen(session_id: str, interval: int = 5):
     print(json.dumps({"status": "stopped", "session": session_id}), flush=True)
 
 
+def watch(timeout: int = 60, interval: float = 1.0, history: int = 0):
+    """Watch messages live (like tail -f but formatted)
+
+    Args:
+        timeout: Max seconds to watch (0 = forever)
+        interval: Polling interval in seconds
+        history: Number of recent messages to show first (0 = none)
+    """
+    init()
+
+    # Handle graceful shutdown
+    running = True
+    def handle_signal(signum, frame):
+        nonlocal running
+        running = False
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    # Get current line count to start from
+    last_line = 0
+    if LOG.exists():
+        lines = LOG.read_text().splitlines()
+        total_lines = len(lines)
+        if history > 0 and total_lines > 0:
+            # Show last N lines as history
+            start_from = max(0, total_lines - history)
+            last_line = start_from
+        else:
+            last_line = total_lines
+
+    project = get_current_project()
+    session_id = get_auto_session_id()
+
+    print(f"\n{'='*60}")
+    print(f"  ★ WATCHING: {project} (as {session_id})")
+    print(f"  Timeout: {'forever' if timeout == 0 else f'{timeout}s'} | Interval: {interval}s")
+    print(f"  Press Ctrl+C to stop")
+    print(f"{'='*60}\n")
+
+    start_time = time.time()
+
+    while running:
+        try:
+            # Check timeout
+            if timeout > 0 and (time.time() - start_time) >= timeout:
+                print(f"\n[timeout reached after {timeout}s]")
+                break
+
+            # Read new lines
+            if LOG.exists():
+                lines = LOG.read_text().splitlines()
+                new_lines = lines[last_line:]
+
+                if new_lines:
+                    for line in new_lines:
+                        # Format the output nicely
+                        if line.startswith("<<<["):
+                            # Multi-line message header
+                            print(f"\n\033[1;36m{line}\033[0m")  # Cyan bold
+                        elif line == "<<<END>>>":
+                            print(f"\033[1;36m{line}\033[0m")  # Cyan bold
+                        elif line.startswith("["):
+                            # Single-line message - parse and colorize
+                            if "[URGENT]" in line or "[ERROR]" in line:
+                                print(f"\033[1;31m{line}\033[0m")  # Red bold
+                            elif "[BROADCAST]" in line or "[HUMAN]" in line:
+                                print(f"\033[1;33m{line}\033[0m")  # Yellow bold
+                            elif "[STATUS]" in line:
+                                print(f"\033[1;32m{line}\033[0m")  # Green bold
+                            elif "[TASK]" in line or "[REPLY]" in line:
+                                print(f"\033[1;35m{line}\033[0m")  # Magenta bold
+                            else:
+                                print(line)
+                        else:
+                            # Message body content
+                            print(f"  {line}")
+
+                    last_line = len(lines)
+                    # Terminal bell on new messages
+                    print("\a", end="", flush=True)
+
+            time.sleep(interval)
+        except Exception as e:
+            print(f"\033[1;31m[error: {e}]\033[0m", file=sys.stderr)
+            time.sleep(interval)
+
+    print(f"\n[stopped watching {project}]")
+    return {"status": "stopped", "lines_seen": last_line}
+
+
 def show_help():
     """Human-friendly help output"""
     help_text = """
@@ -424,7 +523,7 @@ nclaude - Claude-to-Claude Chat
 ===============================
 
 QUICK START (3 terminals):
-  Terminal 1 (human):  tail -f /tmp/nclaude/*/messages.log
+  Terminal 1 (human):  nclaude watch
   Terminal 2 (claude): nclaude send "hello" && nclaude check
   Terminal 3 (claude): nclaude check && nclaude send "hi back"
 
@@ -432,6 +531,7 @@ COMMANDS:
   send <msg>        Send message to all sessions
   check             Read all messages (pending + new)
   read              Read new messages only
+  watch             Live message feed (like tail -f but pretty)
   status            Show chat status, sessions, and peers
   pending           Show messages from listen daemon
   listen            Start background message listener
@@ -444,10 +544,17 @@ COMMANDS:
 FLAGS:
   --dir, -d NAME    Target different project (name or path)
   --type TYPE       Message type: MSG|TASK|REPLY|STATUS|URGENT|ERROR
+  --timeout SECS    Timeout for watch command (0 = forever, default 60)
+  --interval SECS   Polling interval for watch (default 1.0)
+  --history N       Show last N lines before starting live feed
   --all             Show all messages (not just new)
   --quiet, -q       Minimal output
 
 EXAMPLES:
+  nclaude watch                           # live message feed
+  nclaude watch --timeout 0               # watch forever
+  nclaude watch --history 20              # show last 20 msgs then live
+  nclaude watch --timeout 120 --interval 2
   nclaude send "Starting work on auth"
   nclaude send "Need review" --dir other-project
   nclaude read --dir /path/to/other/repo
@@ -616,6 +723,34 @@ def main():
                         pass
             listen(session_id, interval)
             result = None  # listen handles its own output
+
+        elif cmd == "watch":
+            # Parse --timeout flag (default 60s)
+            timeout = 60
+            for i, arg in enumerate(args):
+                if arg == "--timeout" and i + 1 < len(args):
+                    try:
+                        timeout = int(args[i + 1])
+                    except ValueError:
+                        pass
+            # Parse --interval flag (default 1.0s)
+            interval = 1.0
+            for i, arg in enumerate(args):
+                if arg == "--interval" and i + 1 < len(args):
+                    try:
+                        interval = float(args[i + 1])
+                    except ValueError:
+                        pass
+            # Parse --history flag (default 0 = no history)
+            history = 0
+            for i, arg in enumerate(args):
+                if arg == "--history" and i + 1 < len(args):
+                    try:
+                        history = int(args[i + 1])
+                    except ValueError:
+                        pass
+            watch(timeout, interval, history)
+            result = None  # watch handles its own output
 
         # Hub commands - delegate to hub.py and client.py
         elif cmd == "hub":

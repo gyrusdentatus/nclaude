@@ -1,0 +1,27 @@
+{
+  "name": "dial0ut",
+  "owner": {
+    "name": "dial0ut",
+    "email": "hans@dialout.net"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for multi-session coordination and swarm orchestration",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "nclaude",
+      "source": ".",
+      "description": "Claude-to-Claude messaging for multi-session coordination",
+      "version": "2.1.0",
+      "author": {
+        "name": "dial0ut"
+      },
+      "homepage": "https://github.com/gyrusdentatus/nclaude",
+      "repository": "https://github.com/gyrusdentatus/nclaude",
+      "license": "MIT",
+      "keywords": ["claude", "messaging", "coordination", "swarm", "multi-agent"],
+      "category": "productivity"
+    }
+  ]
+}

@@ -102,6 +102,22 @@ Claudes spawn, divide work, report findings.
 
 No dependencies. Pure Python stdlib.
 
+### Option 0: Plugin Install (Recommended)
+
+Install as a Claude Code plugin:
+
+```bash
+# Add the marketplace
+/plugin marketplace add gyrusdentatus/nclaude
+
+# Install nclaude
+/plugin install nclaude@dial0ut
+
+# Slash commands now work: /nsend, /ncheck, /nread, etc.
+```
+
+Updates automatically with `/plugin marketplace update`.
+
 ### Option 1: Single Project (No Install)
 
 Perfect for trying it out or sandboxed usage:
@@ -286,6 +302,71 @@ nclaude unpair other-project    # Remove peer
 ```
 
 Message types: `--type MSG|TASK|REPLY|STATUS|ERROR|URGENT`
+
+---
+
+## Path Handling & Room Resolution
+
+nclaude uses a simple path resolution system for cross-project messaging:
+
+```
+~/.nclaude/peers.json        # Global peer registry
+~/.nclaude/messages.db       # SQLite message storage (default)
+/tmp/nclaude/<project>/      # Per-project file storage (legacy)
+```
+
+### How `--dir` and `pair` resolve paths
+
+| Input | Resolution |
+|-------|------------|
+| `nclaude pair foo` | → `/tmp/nclaude/foo/` |
+| `nclaude pair /path/to/repo` | → git root name → `/tmp/nclaude/repo-name/` |
+| `nclaude --global` | → `~/.nclaude/` |
+
+**Example flow:**
+```bash
+# In project "my-app"
+nclaude pair other-project     # Registers bidirectional pairing
+
+# peers.json now contains:
+# {
+#   "my-app": ["other-project"],
+#   "other-project": ["my-app"]
+# }
+
+# Broadcast to all peers
+nclaude broadcast "standup in 5" --all-peers
+```
+
+### @mention Routing (v2.1.0+)
+
+Messages can target specific sessions:
+
+```bash
+# Send to specific session
+nclaude send "@nclaude/main review this PR"
+
+# Broadcast to specific targets
+nclaude broadcast "@proj-a @proj-b sync up"
+
+# Broadcast to all (no filtering)
+nclaude broadcast "@all emergency alert"
+
+# Check only messages for me
+nclaude check --for-me
+```
+
+### Storage Backends
+
+| Backend | Location | Use case |
+|---------|----------|----------|
+| `sqlite` (default) | `~/.nclaude/messages.db` | Cross-project, persistent |
+| `file` | `/tmp/nclaude/<project>/` | Per-project, ephemeral |
+
+```bash
+nclaude --storage file send "uses file backend"
+nclaude --storage sqlite send "uses sqlite (default)"
+```
 
 ---
 

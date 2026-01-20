@@ -11,7 +11,7 @@
   "plugins": [
     {
       "name": "nclaude",
-      "source": ".",
+      "source": "./",
       "description": "Claude-to-Claude messaging for multi-session coordination",
       "version": "2.1.0",
       "author": {

@@ -3,12 +3,70 @@
 Environment-first configuration with git-aware defaults.
 """
 
+import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 from .utils.git import get_git_info, get_auto_session_id
+
+# Global paths
+NCLAUDE_HOME = Path.home() / ".nclaude"
+ALIASES_PATH = NCLAUDE_HOME / "aliases.json"
+
+
+def load_aliases() -> Dict[str, str]:
+    """Load alias mappings from ~/.nclaude/aliases.json.
+
+    Aliases allow using short names like @main to address nclaude-main.
+
+    Returns:
+        Dict mapping alias -> full session ID
+    """
+    if not ALIASES_PATH.exists():
+        return {}
+    try:
+        return json.loads(ALIASES_PATH.read_text())
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+def save_aliases(aliases: Dict[str, str]) -> None:
+    """Save alias mappings to ~/.nclaude/aliases.json.
+
+    Args:
+        aliases: Dict mapping alias -> full session ID
+    """
+    NCLAUDE_HOME.mkdir(parents=True, exist_ok=True)
+    ALIASES_PATH.write_text(json.dumps(aliases, indent=2))
+
+
+def resolve_recipient(target: str) -> str:
+    """Resolve @mention target to actual session ID.
+
+    Handles:
+        - nclaude/branch -> nclaude-branch
+        - aliases from ~/.nclaude/aliases.json
+        - passthrough for already-resolved names
+
+    Args:
+        target: Raw @mention target (without @)
+
+    Returns:
+        Resolved session ID
+    """
+    # Handle nclaude/branch syntax -> nclaude-branch
+    if target.startswith("nclaude/"):
+        return f"nclaude-{target[8:]}"
+
+    # Check aliases
+    aliases = load_aliases()
+    if target in aliases:
+        return aliases[target]
+
+    # Passthrough
+    return target
 
 
 @dataclass

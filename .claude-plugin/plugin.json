@@ -1,12 +1,6 @@
 {
   "name": "nclaude",
-  "version": "0.1.0",
-  "description": "Headless Claude-to-Claude session chat via file-based message queue",
-  "author": {
-    "name": "vipernauts"
-  },
-  "repository": "https://github.com/vipernauts/nclaude",
-  "license": "MIT",
-  "keywords": ["chat", "multi-session", "collaboration"],
-  "hooks": "./hooks/hooks.json"
+  "version": "2.1.0",
+  "description": "Claude-to-Claude messaging for multi-session coordination",
+  "commands": ".claude/commands"
 }

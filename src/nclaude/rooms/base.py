@@ -1,5 +1,6 @@
 """Base Room abstraction."""
 
+import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -37,6 +38,7 @@ class Room(ABC):
         session_id: str,
         content: str,
         msg_type: str = "MSG",
+        recipient: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Send a message to the room.
 
@@ -44,6 +46,7 @@ class Room(ABC):
             session_id: Sender's session ID
             content: Message content
             msg_type: Message type
+            recipient: Optional @mention target (None = broadcast)
 
         Returns:
             Dict with sent message details
@@ -53,15 +56,19 @@ class Room(ABC):
             session_id=session_id,
             content=content,
             msg_type=msg_type,
+            recipient=recipient,
         )
         self.storage.append_message(message)
 
-        return {
+        result = {
             "sent": content,
             "session": session_id,
             "timestamp": message.timestamp,
             "type": msg_type,
         }
+        if recipient:
+            result["to"] = recipient
+        return result
 
     def read(
         self,
@@ -70,6 +77,7 @@ class Room(ABC):
         quiet: bool = False,
         limit: Optional[int] = None,
         msg_type: Optional[str] = None,
+        for_me: bool = False,
     ) -> Optional[Dict[str, Any]]:
         """Read messages from the room.
 
@@ -79,6 +87,7 @@ class Room(ABC):
             quiet: If True, return None when no new messages
             limit: Maximum messages to return
             msg_type: Filter by message type (TASK, URGENT, etc.)
+            for_me: If True, only show messages addressed to me (or broadcast)
 
         Returns:
             Dict with messages, or None in quiet mode with no messages
@@ -115,6 +124,23 @@ class Room(ABC):
                     if i < len(new_lines):
                         filtered.append(new_lines[i])  # <<<END>>>
                 i += 1
+            new_lines = filtered
+
+        # Apply for_me filter (messages to me or broadcast)
+        if for_me:
+            filtered = []
+            for line in new_lines:
+                # Check for @mention at start of content
+                # Format: [ts] [session] [TYPE] @recipient msg
+                # or: [ts] [session] @recipient msg
+                match = re.search(r'\] @([\w/.-]+)\s', line)
+                if match:
+                    recipient = match.group(1)
+                    if recipient == session_id or recipient == "*":
+                        filtered.append(line)
+                else:
+                    # No @mention = broadcast, include it
+                    filtered.append(line)
             new_lines = filtered
 
         # Apply limit
@@ -190,22 +216,40 @@ class Room(ABC):
             "range": f"{start}:{end}",
         }
 
-    def check(self, session_id: str) -> Dict[str, Any]:
+    def check(self, session_id: str, for_me: bool = False) -> Dict[str, Any]:
         """Combined pending + read - one-stop "catch me up" command.
 
         Args:
             session_id: Session to check for
+            for_me: If True, only show messages addressed to me (or broadcast)
 
         Returns:
             Dict with pending and new messages
         """
         pending_result = self.pending(session_id)
-        read_result = self.read(session_id)
+        read_result = self.read(session_id, for_me=for_me)
+
+        # Filter pending messages if for_me is set
+        pending_msgs = pending_result.get("messages", [])
+        if for_me and pending_msgs:
+            # Filter for messages to me or broadcast
+            filtered = []
+            for msg in pending_msgs:
+                # Check if it's a string (raw log line) or dict
+                if isinstance(msg, str):
+                    # For raw lines, check if @session_id appears or no @mention
+                    if f"@{session_id}" in msg or not msg.startswith("@"):
+                        filtered.append(msg)
+                elif isinstance(msg, dict):
+                    recipient = msg.get("recipient")
+                    if recipient is None or recipient == session_id or recipient == "*":
+                        filtered.append(msg)
+            pending_msgs = filtered
 
         return {
-            "pending_messages": pending_result.get("messages", []),
+            "pending_messages": pending_msgs,
             "new_messages": read_result.get("messages", []),
-            "pending_count": pending_result.get("count", 0),
+            "pending_count": len(pending_msgs),
             "new_count": read_result.get("new_count", 0),
-            "total": pending_result.get("count", 0) + read_result.get("new_count", 0),
+            "total": len(pending_msgs) + read_result.get("new_count", 0),
         }

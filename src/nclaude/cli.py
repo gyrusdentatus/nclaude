@@ -55,6 +55,7 @@ COMMANDS:
   pair <project>    Register peer for coordination
   unpair [project]  Remove peer (or all peers)
   peers             List current peers
+  broadcast <msg>   Send BROADCAST from human to Claudes
 
 FLAGS:
   --dir, -d NAME    Target different project (name or path)
@@ -67,6 +68,9 @@ FLAGS:
   --all             Show all messages (not just new)
   --quiet, -q       Minimal output
   --global, -g      Use global room (~/.nclaude/)
+  --to @NAME        Send to specific recipient
+  --for-me          Only show messages addressed to me
+  --all-peers       Broadcast to all registered peers
 
 EXAMPLES:
   nclaude watch                           # live message feed
@@ -85,6 +89,9 @@ EXAMPLES:
   nclaude send "ACK: confirmed" --type REPLY
   nclaude check
   nclaude status
+  nclaude broadcast "standup in 5" --all-peers  # to all peers
+  nclaude broadcast "@main @feat-xyz review PR"  # to specific sessions
+  nclaude broadcast "@all emergency alert"       # to everyone
 
 PROTOCOL:
   SYN-ACK: Before parallel work, coordinate who does what
@@ -154,8 +161,20 @@ def create_parser() -> argparse.ArgumentParser:
         help="Filter by message type: TASK|REPLY|STATUS|URGENT|ERROR"
     )
     parser.add_argument(
-        "--storage", default="file",
-        help="Storage backend: file|sqlite"
+        "--to", dest="to_recipient", default=None,
+        help="Send to specific recipient (@mention)"
+    )
+    parser.add_argument(
+        "--for-me", dest="for_me", action="store_true",
+        help="Only show messages addressed to me (or broadcast)"
+    )
+    parser.add_argument(
+        "--storage", default="sqlite",
+        help="Storage backend: sqlite|file (sqlite uses ~/.nclaude/messages.db)"
+    )
+    parser.add_argument(
+        "--all-peers", dest="all_peers", action="store_true",
+        help="Broadcast to all registered peers"
     )
     parser.add_argument(
         "command", nargs="?", help="Command to run"
@@ -206,7 +225,7 @@ def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
         else:
             message = ""
 
-        return cmd_send(room, session_id, message, args.msg_type.upper())
+        return cmd_send(room, session_id, message, args.msg_type.upper(), to=args.to_recipient)
 
     elif cmd == "read":
         if cmd_args:
@@ -236,7 +255,7 @@ def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
 
     elif cmd == "broadcast":
         message = " ".join(cmd_args) if cmd_args else ""
-        return cmd_broadcast(room, message)
+        return cmd_broadcast(room, message, all_peers=args.all_peers)
 
     elif cmd == "pending":
         if cmd_args:
@@ -246,7 +265,7 @@ def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
     elif cmd == "check":
         if cmd_args:
             session_id = cmd_args[0]
-        return cmd_check(room, session_id)
+        return cmd_check(room, session_id, for_me=args.for_me)
 
     elif cmd == "listen":
         if cmd_args:

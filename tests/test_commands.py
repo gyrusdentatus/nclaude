@@ -35,16 +35,19 @@ class MockRoom:
     def storage(self):
         return self._storage
 
-    def send(self, session_id, content, msg_type="MSG"):
+    def send(self, session_id, content, msg_type="MSG", recipient=None):
         from nclaude.storage.base import Message
-        msg = Message.create(self.name, session_id, content, msg_type)
+        msg = Message.create(self.name, session_id, content, msg_type, recipient=recipient)
         self._storage.append_message(msg)
-        return {
+        result = {
             "sent": content,
             "session": session_id,
             "timestamp": msg.timestamp,
             "type": msg_type,
         }
+        if recipient:
+            result["to"] = recipient
+        return result
 
     def read(self, session_id, all_messages=False, quiet=False, limit=None, msg_type=None):
         self._storage.init()
@@ -86,7 +89,7 @@ class MockRoom:
     def pending(self, session_id):
         return {"pending": False, "messages": [], "count": 0}
 
-    def check(self, session_id):
+    def check(self, session_id, for_me=False):
         pending_result = self.pending(session_id)
         read_result = self.read(session_id)
         return {

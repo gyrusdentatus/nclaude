@@ -8,12 +8,18 @@ from typing import List, Optional, Dict, Any
 
 from .base import Message
 
+# Single global database for all projects
+GLOBAL_DB_PATH = Path.home() / ".nclaude" / "messages.db"
+
 
 class SQLiteStorage:
     """SQLite-based storage with WAL mode for concurrent access.
 
+    Uses a single global database at ~/.nclaude/messages.db with room column
+    for project separation. This enables cross-project coordination.
+
     Schema:
-        messages: id, room, session_id, msg_type, content, timestamp, metadata
+        messages: id, room, session_id, msg_type, content, timestamp, metadata, recipient
         read_pointers: session_id, room, last_read_id
 
     Uses thread-local connections for safety.
@@ -25,10 +31,11 @@ class SQLiteStorage:
         """Initialize SQLite storage.
 
         Args:
-            base_dir: Base directory for database file
+            base_dir: Base directory - used for room name only, DB is global
         """
         self.base_dir = Path(base_dir)
-        self.db_path = self.base_dir / "messages.db"
+        # Always use global DB path - room column separates projects
+        self.db_path = GLOBAL_DB_PATH
         self.log_path = self.db_path  # For compatibility with Room
 
     @property
@@ -40,7 +47,8 @@ class SQLiteStorage:
 
     def _create_connection(self) -> sqlite3.Connection:
         """Create a new database connection."""
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure global DB directory exists
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
         # Enable WAL mode for concurrent reads
@@ -55,7 +63,8 @@ class SQLiteStorage:
 
     def init(self) -> None:
         """Initialize database schema."""
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        # Ensure global DB directory exists
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
         self._conn.executescript("""
             CREATE TABLE IF NOT EXISTS messages (
@@ -65,7 +74,8 @@ class SQLiteStorage:
                 msg_type TEXT NOT NULL DEFAULT 'MSG',
                 content TEXT NOT NULL,
                 timestamp TEXT NOT NULL,
-                metadata TEXT
+                metadata TEXT,
+                recipient TEXT
             );
 
             CREATE INDEX IF NOT EXISTS idx_messages_room
@@ -76,6 +86,9 @@ class SQLiteStorage:
 
             CREATE INDEX IF NOT EXISTS idx_messages_room_id
                 ON messages(room, id);
+
+            CREATE INDEX IF NOT EXISTS idx_messages_recipient
+                ON messages(recipient);
 
             CREATE TABLE IF NOT EXISTS read_pointers (
                 session_id TEXT NOT NULL,
@@ -92,6 +105,13 @@ class SQLiteStorage:
         """)
         self._conn.commit()
 
+        # Add recipient column if it doesn't exist (migration for existing DBs)
+        try:
+            self._conn.execute("ALTER TABLE messages ADD COLUMN recipient TEXT")
+            self._conn.commit()
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
     def append_message(self, message: Message) -> Message:
         """Append a message to storage.
 
@@ -107,8 +127,8 @@ class SQLiteStorage:
 
         cursor = self._conn.execute(
             """
-            INSERT INTO messages (room, session_id, msg_type, content, timestamp, metadata)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO messages (room, session_id, msg_type, content, timestamp, metadata, recipient)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 self.room,
@@ -117,6 +137,7 @@ class SQLiteStorage:
                 message.content,
                 message.timestamp,
                 metadata_json,
+                message.recipient,
             ),
         )
         self._conn.commit()
@@ -130,6 +151,7 @@ class SQLiteStorage:
         since_id: int = 0,
         limit: Optional[int] = None,
         msg_type: Optional[str] = None,
+        recipient: Optional[str] = None,
     ) -> List[Message]:
         """Read messages from storage.
 
@@ -138,6 +160,7 @@ class SQLiteStorage:
             since_id: Only return messages after this ID
             limit: Maximum number of messages
             msg_type: Filter by message type (TASK, URGENT, etc.)
+            recipient: Filter by recipient (None = all, session_id = for me)
 
         Returns:
             List of messages
@@ -145,7 +168,7 @@ class SQLiteStorage:
         self.init()
 
         query = """
-            SELECT id, room, session_id, msg_type, content, timestamp, metadata
+            SELECT id, room, session_id, msg_type, content, timestamp, metadata, recipient
             FROM messages
             WHERE room = ? AND id > ?
         """
@@ -154,6 +177,11 @@ class SQLiteStorage:
         if msg_type:
             query += " AND msg_type = ?"
             params.append(msg_type.upper())
+
+        if recipient:
+            # Filter: recipient is me, or broadcast (NULL or '*')
+            query += " AND (recipient IS NULL OR recipient = ? OR recipient = '*')"
+            params.append(recipient)
 
         query += " ORDER BY id ASC"
 
@@ -175,6 +203,7 @@ class SQLiteStorage:
                     content=row["content"],
                     timestamp=row["timestamp"],
                     metadata=metadata,
+                    recipient=row["recipient"],
                 )
             )
 

@@ -18,6 +18,7 @@ class Message:
         content: Message content (can be multi-line)
         timestamp: UTC timestamp string
         metadata: Optional JSON metadata for extensibility
+        recipient: Optional @mention target (None = broadcast to all)
     """
     id: int
     room: str
@@ -26,6 +27,7 @@ class Message:
     content: str
     timestamp: str
     metadata: Optional[Dict[str, Any]] = None
+    recipient: Optional[str] = None
 
     @classmethod
     def create(
@@ -35,6 +37,7 @@ class Message:
         content: str,
         msg_type: str = "MSG",
         metadata: Optional[Dict[str, Any]] = None,
+        recipient: Optional[str] = None,
     ) -> "Message":
         """Create a new message with auto-generated timestamp."""
         return cls(
@@ -45,19 +48,25 @@ class Message:
             content=content,
             timestamp=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
             metadata=metadata,
+            recipient=recipient,
         )
 
     def to_log_line(self) -> str:
         """Convert to log file format (for file backend compatibility)."""
-        if "\n" in self.content:
+        # Include @recipient prefix if targeted message
+        content = self.content
+        if self.recipient:
+            content = f"@{self.recipient} {content}"
+
+        if "\n" in content:
             # Multi-line format
-            return f"<<<[{self.timestamp}][{self.session_id}][{self.msg_type}]>>>\n{self.content}\n<<<END>>>"
+            return f"<<<[{self.timestamp}][{self.session_id}][{self.msg_type}]>>>\n{content}\n<<<END>>>"
         else:
             # Single-line format
             if self.msg_type != "MSG":
-                return f"[{self.timestamp}] [{self.session_id}] [{self.msg_type}] {self.content}"
+                return f"[{self.timestamp}] [{self.session_id}] [{self.msg_type}] {content}"
             else:
-                return f"[{self.timestamp}] [{self.session_id}] {self.content}"
+                return f"[{self.timestamp}] [{self.session_id}] {content}"
 
 
 class StorageBackend(Protocol):

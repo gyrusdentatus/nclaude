@@ -235,8 +235,14 @@ def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
         return cmd_peers(room)
 
     elif cmd == "broadcast":
-        message = " ".join(cmd_args) if cmd_args else ""
-        return cmd_broadcast(room, message)
+        # Parse @targets and message
+        # nclaude broadcast "msg" @peer1 @peer2
+        # nclaude broadcast "msg" --all-peers
+        targets = [a for a in cmd_args if a.startswith("@")]
+        all_peers = "--all-peers" in cmd_args or "--all" in cmd_args
+        message_parts = [a for a in cmd_args if not a.startswith("@") and not a.startswith("--")]
+        message = " ".join(message_parts)
+        return cmd_broadcast(room, message, targets=targets if targets else None, all_peers=all_peers)
 
     elif cmd == "pending":
         if cmd_args:

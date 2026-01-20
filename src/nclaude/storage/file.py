@@ -67,16 +67,24 @@ class FileStorage:
         room: str,
         since_id: int = 0,
         limit: Optional[int] = None,
+        msg_type: Optional[str] = None,
     ) -> List[Message]:
         """Read messages from log file.
 
         Note: room parameter is ignored - we use self.room
+
+        Args:
+            room: Room name (ignored, uses self.room)
+            since_id: Start reading after this line number
+            limit: Maximum messages to return
+            msg_type: Filter by message type (TASK, URGENT, etc.)
         """
         if not self.log_path.exists():
             return []
 
         lines = self.log_path.read_text().splitlines()
         messages = []
+        type_filter = msg_type.upper() if msg_type else None
 
         i = since_id  # Start from the line after last read
         while i < len(lines):
@@ -84,7 +92,10 @@ class FileStorage:
             msg = self._parse_line(line, i + 1, lines, i)
 
             if msg:
-                messages.append(msg)
+                # Apply type filter
+                if type_filter is None or msg.msg_type == type_filter:
+                    messages.append(msg)
+
                 # Skip multi-line content
                 if msg.content and "\n" in msg.content:
                     # Count lines in the multi-line message

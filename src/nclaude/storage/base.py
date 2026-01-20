@@ -86,6 +86,7 @@ class StorageBackend(Protocol):
         room: str,
         since_id: int = 0,
         limit: Optional[int] = None,
+        msg_type: Optional[str] = None,
     ) -> List[Message]:
         """Read messages from storage.
 
@@ -93,6 +94,7 @@ class StorageBackend(Protocol):
             room: Room to read from
             since_id: Only return messages after this ID (0 for all)
             limit: Maximum number of messages to return
+            msg_type: Filter by message type (TASK, URGENT, etc.)
 
         Returns:
             List of messages

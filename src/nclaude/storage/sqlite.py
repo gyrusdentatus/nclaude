@@ -129,6 +129,7 @@ class SQLiteStorage:
         room: str,
         since_id: int = 0,
         limit: Optional[int] = None,
+        msg_type: Optional[str] = None,
     ) -> List[Message]:
         """Read messages from storage.
 
@@ -136,6 +137,7 @@ class SQLiteStorage:
             room: Room to read from (uses self.room)
             since_id: Only return messages after this ID
             limit: Maximum number of messages
+            msg_type: Filter by message type (TASK, URGENT, etc.)
 
         Returns:
             List of messages
@@ -146,9 +148,14 @@ class SQLiteStorage:
             SELECT id, room, session_id, msg_type, content, timestamp, metadata
             FROM messages
             WHERE room = ? AND id > ?
-            ORDER BY id ASC
         """
         params: List[Any] = [self.room, since_id]
+
+        if msg_type:
+            query += " AND msg_type = ?"
+            params.append(msg_type.upper())
+
+        query += " ORDER BY id ASC"
 
         if limit:
             query += " LIMIT ?"

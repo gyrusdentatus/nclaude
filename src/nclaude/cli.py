@@ -62,6 +62,8 @@ FLAGS:
   --timeout SECS    Timeout for watch command (0 = forever, default 60)
   --interval SECS   Polling interval for watch (default 1.0)
   --history N       Show last N lines before starting live feed
+  --limit N         Max messages to return (for read command)
+  --filter TYPE     Filter by type: TASK|REPLY|STATUS|URGENT|ERROR
   --all             Show all messages (not just new)
   --quiet, -q       Minimal output
   --global, -g      Use global room (~/.nclaude/)
@@ -144,6 +146,14 @@ def create_parser() -> argparse.ArgumentParser:
         help="Number of recent messages to show in watch"
     )
     parser.add_argument(
+        "--limit", type=int, default=None,
+        help="Maximum messages to return (for read command)"
+    )
+    parser.add_argument(
+        "--filter", dest="filter_type", default=None,
+        help="Filter by message type: TASK|REPLY|STATUS|URGENT|ERROR"
+    )
+    parser.add_argument(
         "--storage", default="file",
         help="Storage backend: file|sqlite"
     )
@@ -201,7 +211,10 @@ def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
     elif cmd == "read":
         if cmd_args:
             session_id = cmd_args[0]
-        return cmd_read(room, session_id, args.all, args.quiet)
+        return cmd_read(
+            room, session_id, args.all, args.quiet,
+            limit=args.limit, msg_type=args.filter_type
+        )
 
     elif cmd == "status":
         return cmd_status(room)

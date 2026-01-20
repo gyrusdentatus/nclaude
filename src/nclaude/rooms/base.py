@@ -68,6 +68,8 @@ class Room(ABC):
         session_id: str,
         all_messages: bool = False,
         quiet: bool = False,
+        limit: Optional[int] = None,
+        msg_type: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Read messages from the room.
 
@@ -75,6 +77,8 @@ class Room(ABC):
             session_id: Reader's session ID
             all_messages: If True, read all messages
             quiet: If True, return None when no new messages
+            limit: Maximum messages to return
+            msg_type: Filter by message type (TASK, URGENT, etc.)
 
         Returns:
             Dict with messages, or None in quiet mode with no messages
@@ -90,7 +94,34 @@ class Room(ABC):
         lines = self.storage.get_raw_lines(self.name)
         new_lines = lines[last_line:]
 
-        # Update pointer
+        # Apply type filter if specified (for raw lines)
+        if msg_type:
+            type_upper = msg_type.upper()
+            filtered = []
+            i = 0
+            while i < len(new_lines):
+                line = new_lines[i]
+                # Check single-line format: [ts] [session] [TYPE] msg
+                if f"[{type_upper}]" in line:
+                    filtered.append(line)
+                # Check multi-line header: <<<[ts][session][TYPE]>>>
+                elif line.startswith("<<<[") and f"][{type_upper}]>>>" in line:
+                    # Include header and content until <<<END>>>
+                    filtered.append(line)
+                    i += 1
+                    while i < len(new_lines) and new_lines[i] != "<<<END>>>":
+                        filtered.append(new_lines[i])
+                        i += 1
+                    if i < len(new_lines):
+                        filtered.append(new_lines[i])  # <<<END>>>
+                i += 1
+            new_lines = filtered
+
+        # Apply limit
+        if limit and len(new_lines) > limit:
+            new_lines = new_lines[:limit]
+
+        # Update pointer (always update to latest, regardless of filters)
         self.storage.set_read_pointer(session_id, self.name, len(lines))
 
         if quiet and len(new_lines) == 0:

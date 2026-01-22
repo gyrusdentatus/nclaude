@@ -14,6 +14,7 @@ from .broadcast import cmd_broadcast
 from .chat import cmd_chat
 from .hub import cmd_hub, cmd_connect, cmd_hsend, cmd_hrecv
 from .alias import cmd_alias
+from .wait import cmd_wait
 
 __all__ = [
     "cmd_send",
@@ -35,4 +36,5 @@ __all__ = [
     "cmd_hsend",
     "cmd_hrecv",
     "cmd_alias",
+    "cmd_wait",
 ]

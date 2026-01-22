@@ -29,6 +29,7 @@ from .commands import (
     cmd_hsend,
     cmd_hrecv,
     cmd_alias,
+    cmd_wait,
 )
 
 
@@ -47,6 +48,7 @@ COMMANDS:
   send <msg>        Send message to all sessions
   check             Read all messages (pending + new)
   read              Read new messages only
+  wait [timeout]    Block until message arrives (default 30s)
   watch             Live message feed (like tail -f but pretty)
   status            Show chat status, sessions, and peers
   pending           Show messages from listen daemon
@@ -292,6 +294,10 @@ def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
     elif cmd == "watch":
         cmd_watch(room, session_id, args.timeout, args.interval, args.history)
         return None  # watch handles its own output
+
+    elif cmd == "wait":
+        wait_timeout = int(cmd_args[0]) if cmd_args else args.timeout
+        return cmd_wait(room, session_id, wait_timeout, args.interval)
 
     elif cmd == "hub":
         subcmd = cmd_args[0] if cmd_args else "status"

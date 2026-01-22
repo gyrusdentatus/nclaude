@@ -1,6 +1,17 @@
 {
   "description": "nclaude messaging hooks - check for messages from other Claude sessions",
   "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/pretool-check.py",
+            "timeout": 2000
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash|Edit|Write|Task",

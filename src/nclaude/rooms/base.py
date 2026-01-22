@@ -1,6 +1,5 @@
 """Base Room abstraction."""
 
-import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import List, Optional, Dict, Any
@@ -95,65 +94,36 @@ class Room(ABC):
         self.storage.init()
 
         # Get last read position
-        last_line = 0
+        since_id = 0
         if not all_messages:
-            last_line = self.storage.get_read_pointer(session_id, self.name)
+            since_id = self.storage.get_read_pointer(session_id, self.name)
 
-        # Get raw lines for backwards compatibility
-        lines = self.storage.get_raw_lines(self.name)
-        new_lines = lines[last_line:]
-
-        # Apply type filter if specified (for raw lines)
-        if msg_type:
-            type_upper = msg_type.upper()
-            filtered = []
-            i = 0
-            while i < len(new_lines):
-                line = new_lines[i]
-                # Check single-line format: [ts] [session] [TYPE] msg
-                if f"[{type_upper}]" in line:
-                    filtered.append(line)
-                # Check multi-line header: <<<[ts][session][TYPE]>>>
-                elif line.startswith("<<<[") and f"][{type_upper}]>>>" in line:
-                    # Include header and content until <<<END>>>
-                    filtered.append(line)
-                    i += 1
-                    while i < len(new_lines) and new_lines[i] != "<<<END>>>":
-                        filtered.append(new_lines[i])
-                        i += 1
-                    if i < len(new_lines):
-                        filtered.append(new_lines[i])  # <<<END>>>
-                i += 1
-            new_lines = filtered
-
-        # Apply for_me filter (messages to me or broadcast)
-        if for_me:
-            filtered = []
-            for line in new_lines:
-                # Check for @mention at start of content
-                # Format: [ts] [session] [TYPE] @recipient msg
-                # or: [ts] [session] @recipient msg
-                match = re.search(r'\] @([\w/.-]+)\s', line)
-                if match:
-                    recipient = match.group(1)
-                    if recipient == session_id or recipient == "*":
-                        filtered.append(line)
-                else:
-                    # No @mention = broadcast, include it
-                    filtered.append(line)
-            new_lines = filtered
+        # Use storage-level filtering for efficiency
+        recipient_filter = session_id if for_me else None
+        messages = self.storage.read_messages(
+            room=self.name,
+            since_id=since_id,
+            msg_type=msg_type,
+            recipient=recipient_filter,
+        )
 
         # Apply limit
-        if limit and len(new_lines) > limit:
+        if limit and len(messages) > limit:
             if all_messages:
                 # For --all, show the LAST N messages (most recent)
-                new_lines = new_lines[-limit:]
+                messages = messages[-limit:]
             else:
                 # For new messages, show the FIRST N (oldest unread first)
-                new_lines = new_lines[:limit]
+                messages = messages[:limit]
 
-        # Update pointer (always update to latest, regardless of filters)
-        self.storage.set_read_pointer(session_id, self.name, len(lines))
+        # Convert to log lines for backwards compatibility
+        new_lines = [msg.to_log_line() for msg in messages]
+
+        # Get total count for pointer update
+        total = self.storage.get_message_count(self.name)
+
+        # Update pointer to latest (always update, regardless of filters)
+        self.storage.set_read_pointer(session_id, self.name, total)
 
         if quiet and len(new_lines) == 0:
             return None
@@ -161,7 +131,7 @@ class Room(ABC):
         return {
             "messages": new_lines,
             "new_count": len(new_lines),
-            "total": len(lines),
+            "total": total,
         }
 
     def status(self) -> Dict[str, Any]:
@@ -237,17 +207,26 @@ class Room(ABC):
         # Filter pending messages if for_me is set
         pending_msgs = pending_result.get("messages", [])
         if for_me and pending_msgs:
-            # Filter for messages to me or broadcast
             filtered = []
             for msg in pending_msgs:
-                # Check if it's a string (raw log line) or dict
                 if isinstance(msg, str):
-                    # For raw lines, check if @session_id appears or no @mention
-                    if f"@{session_id}" in msg or not msg.startswith("@"):
+                    # For raw lines, check @mention patterns
+                    # No @mention = broadcast (include)
+                    # @session_id = for me (include)
+                    # @* = broadcast (include)
+                    # @other = not for me (exclude)
+                    import re
+                    match = re.search(r'\] @([\w/.,@-]+)\s', msg)
+                    if match:
+                        recipient = match.group(1)
+                        if self._recipient_for_me(recipient, session_id):
+                            filtered.append(msg)
+                    else:
+                        # No @mention = broadcast
                         filtered.append(msg)
                 elif isinstance(msg, dict):
                     recipient = msg.get("recipient")
-                    if recipient is None or recipient == session_id or recipient == "*":
+                    if self._recipient_for_me(recipient, session_id):
                         filtered.append(msg)
             pending_msgs = filtered
 
@@ -258,3 +237,24 @@ class Room(ABC):
             "new_count": read_result.get("new_count", 0),
             "total": len(pending_msgs) + read_result.get("new_count", 0),
         }
+
+    def _recipient_for_me(self, recipient: Optional[str], session_id: str) -> bool:
+        """Check if a recipient field includes the given session.
+
+        Args:
+            recipient: Recipient field (None, "*", session_id, or comma-list)
+            session_id: Session to check for
+
+        Returns:
+            True if message is for this session
+        """
+        if recipient is None:
+            return True
+        if recipient == "*":
+            return True
+        if recipient == session_id:
+            return True
+        if "," in recipient:
+            parts = [p.strip() for p in recipient.split(",")]
+            return session_id in parts
+        return False

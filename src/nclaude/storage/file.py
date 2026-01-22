@@ -68,6 +68,7 @@ class FileStorage:
         since_id: int = 0,
         limit: Optional[int] = None,
         msg_type: Optional[str] = None,
+        recipient: Optional[str] = None,
     ) -> List[Message]:
         """Read messages from log file.
 
@@ -78,6 +79,7 @@ class FileStorage:
             since_id: Start reading after this line number
             limit: Maximum messages to return
             msg_type: Filter by message type (TASK, URGENT, etc.)
+            recipient: Filter for session (None=all, session_id=for me only)
         """
         if not self.log_path.exists():
             return []
@@ -93,7 +95,12 @@ class FileStorage:
 
             if msg:
                 # Apply type filter
-                if type_filter is None or msg.msg_type == type_filter:
+                if type_filter is not None and msg.msg_type != type_filter:
+                    pass  # Skip this message
+                # Apply recipient filter
+                elif recipient is not None and not self._recipient_matches(msg.recipient, recipient):
+                    pass  # Skip this message
+                else:
                     messages.append(msg)
 
                 # Skip multi-line content
@@ -109,6 +116,31 @@ class FileStorage:
                 break
 
         return messages
+
+    def _recipient_matches(self, msg_recipient: Optional[str], session_id: str) -> bool:
+        """Check if a message is for the given session.
+
+        Args:
+            msg_recipient: Message's recipient field (None=broadcast, "*"=broadcast, or session ID(s))
+            session_id: Session ID to check for
+
+        Returns:
+            True if message should be visible to this session
+        """
+        # No recipient = broadcast to all
+        if msg_recipient is None:
+            return True
+        # Explicit broadcast
+        if msg_recipient == "*":
+            return True
+        # Direct match
+        if msg_recipient == session_id:
+            return True
+        # Check comma-separated list
+        if "," in msg_recipient:
+            recipients = [r.strip() for r in msg_recipient.split(",")]
+            return session_id in recipients
+        return False
 
     def _parse_line(
         self, line: str, line_num: int, all_lines: List[str], line_idx: int
@@ -133,6 +165,8 @@ class FileStorage:
                     content_lines.append(all_lines[j])
                     j += 1
                 content = "\n".join(content_lines)
+                # Extract recipient from @mention prefix
+                content, recipient = self._extract_recipient(content)
                 return Message(
                     id=line_num,
                     room=self.room,
@@ -140,6 +174,7 @@ class FileStorage:
                     msg_type=msg_type,
                     content=content,
                     timestamp=timestamp,
+                    recipient=recipient,
                 )
 
         # Single-line message: [timestamp] [session_id] [TYPE] content
@@ -151,6 +186,7 @@ class FileStorage:
             )
             if match:
                 timestamp, session_id, msg_type, content = match.groups()
+                content, recipient = self._extract_recipient(content)
                 return Message(
                     id=line_num,
                     room=self.room,
@@ -158,12 +194,14 @@ class FileStorage:
                     msg_type=msg_type,
                     content=content,
                     timestamp=timestamp,
+                    recipient=recipient,
                 )
 
             # Try without type (defaults to MSG)
             match = re.match(r"\[([^\]]+)\] \[([^\]]+)\] (.+)", line)
             if match:
                 timestamp, session_id, content = match.groups()
+                content, recipient = self._extract_recipient(content)
                 return Message(
                     id=line_num,
                     room=self.room,
@@ -171,9 +209,27 @@ class FileStorage:
                     msg_type="MSG",
                     content=content,
                     timestamp=timestamp,
+                    recipient=recipient,
                 )
 
         return None
+
+    def _extract_recipient(self, content: str) -> tuple:
+        """Extract @recipient from content start.
+
+        Args:
+            content: Message content that may start with @recipient
+
+        Returns:
+            Tuple of (cleaned_content, recipient or None)
+        """
+        # Match @mention at start: @name, @a,@b (multi), @nclaude/branch
+        match = re.match(r'^@([\w/.,@-]+)\s+', content)
+        if match:
+            recipient = match.group(1)
+            cleaned = content[match.end():]
+            return cleaned, recipient
+        return content, None
 
     def get_read_pointer(self, session_id: str, room: str) -> int:
         """Get last read line number for a session."""

@@ -1,12 +1,24 @@
 {
   "description": "nclaude messaging hooks - check for messages from other Claude sessions",
   "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/pretool-check.py",
+            "timeout": 2
+          }
+        ]
+      }
+    ],
     "SessionStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-messages.sh",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-init.sh",
             "timeout": 10
           }
         ]
@@ -17,8 +29,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop-check.sh",
-            "timeout": 15
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/stop-check.py",
+            "timeout": 5
           }
         ]
       }
@@ -29,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/check-messages.sh",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/check-messages.py",
             "timeout": 10
           }
         ]

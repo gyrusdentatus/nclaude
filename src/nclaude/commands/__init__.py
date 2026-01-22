@@ -13,6 +13,7 @@ from .pair import cmd_pair, cmd_unpair, cmd_peers
 from .broadcast import cmd_broadcast
 from .chat import cmd_chat
 from .hub import cmd_hub, cmd_connect, cmd_hsend, cmd_hrecv
+from .alias import cmd_alias
 
 __all__ = [
     "cmd_send",
@@ -33,4 +34,5 @@ __all__ = [
     "cmd_connect",
     "cmd_hsend",
     "cmd_hrecv",
+    "cmd_alias",
 ]

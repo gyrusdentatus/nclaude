@@ -179,9 +179,15 @@ class SQLiteStorage:
             params.append(msg_type.upper())
 
         if recipient:
-            # Filter: recipient is me, or broadcast (NULL or '*')
-            query += " AND (recipient IS NULL OR recipient = ? OR recipient = '*')"
+            # Filter: broadcast, directly to me, or I'm in comma-separated list
+            query += """ AND (
+                recipient IS NULL
+                OR recipient = '*'
+                OR recipient = ?
+                OR (',' || recipient || ',') LIKE ?
+            )"""
             params.append(recipient)
+            params.append(f"%,{recipient},%")
 
         query += " ORDER BY id ASC"
 

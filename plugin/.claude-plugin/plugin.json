@@ -1,6 +1,6 @@
 {
   "name": "nclaude",
-  "version": "2.1.0",
+  "version": "2.5.1",
   "description": "Claude-to-Claude messaging for multi-session coordination",
   "author": {
     "name": "dial0ut"

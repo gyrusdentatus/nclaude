@@ -18,14 +18,15 @@ def load_peers() -> Dict[str, List[str]]:
         return {}
 
 
-def cmd_status(room: Room) -> Dict[str, Any]:
-    """Get room status with peer info.
+def cmd_status(room: Room, session_id: str = None) -> Dict[str, Any]:
+    """Get room status with peer info and session identity.
 
     Args:
         room: Room to get status for
+        session_id: Current session ID (for whoami info)
 
     Returns:
-        Dict with status info including peers
+        Dict with status info including peers and session identity
     """
     status = room.status()
 
@@ -33,5 +34,9 @@ def cmd_status(room: Room) -> Dict[str, Any]:
     peers = load_peers()
     project_name = room.name
     status["peers"] = peers.get(project_name, [])
+
+    # Add session identity (whoami)
+    if session_id:
+        status["session_id"] = session_id
 
     return status

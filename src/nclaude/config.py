@@ -42,20 +42,42 @@ def save_aliases(aliases: Dict[str, str]) -> None:
     ALIASES_PATH.write_text(json.dumps(aliases, indent=2))
 
 
-def resolve_recipient(target: str) -> str:
-    """Resolve @mention target to actual session ID.
+def resolve_recipient(target: str, room_name: Optional[str] = None) -> str:
+    """Resolve @mention target to actual session ID(s).
 
     Handles:
+        - @all, @* -> "*" (broadcast marker)
+        - @room, @peers -> comma-separated list of room sessions
+        - @a,@b or @a,b -> "a,b" (multi-recipient)
         - nclaude/branch -> nclaude-branch
         - aliases from ~/.nclaude/aliases.json
         - passthrough for already-resolved names
 
     Args:
         target: Raw @mention target (without @)
+        room_name: Optional room name for @room/@peers resolution
 
     Returns:
-        Resolved session ID
+        Resolved session ID, comma-separated list, or "*" for broadcast
     """
+    # Handle broadcast
+    if target in ("all", "*"):
+        return "*"
+
+    # Handle room/peers - get active sessions in current room
+    if target in ("room", "peers") and room_name:
+        from .storage.sqlite import SQLiteStorage
+        from pathlib import Path
+        storage = SQLiteStorage(Path(f"/tmp/nclaude/{room_name}"))
+        sessions = storage.get_sessions(room_name)
+        return ",".join(sessions) if sessions else "*"
+
+    # Handle multi-recipient: @a,@b or @a,b
+    if "," in target:
+        parts = [p.strip().lstrip("@") for p in target.split(",")]
+        resolved = [resolve_recipient(p, room_name) for p in parts]
+        return ",".join(resolved)
+
     # Handle nclaude/branch syntax -> nclaude-branch
     if target.startswith("nclaude/"):
         return f"nclaude-{target[8:]}"

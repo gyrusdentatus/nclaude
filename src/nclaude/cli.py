@@ -28,6 +28,7 @@ from .commands import (
     cmd_connect,
     cmd_hsend,
     cmd_hrecv,
+    cmd_alias,
 )
 
 
@@ -55,6 +56,7 @@ COMMANDS:
   pair <project>    Register peer for coordination
   unpair [project]  Remove peer (or all peers)
   peers             List current peers
+  alias [name] [id] Manage session aliases (@k8s -> cc-abc123)
   broadcast <msg>   Send BROADCAST from human to Claudes
 
 FLAGS:
@@ -177,6 +179,10 @@ def create_parser() -> argparse.ArgumentParser:
         help="Broadcast to all registered peers"
     )
     parser.add_argument(
+        "--delete", "-D", dest="delete", action="store_true",
+        help="Delete alias (for alias command)"
+    )
+    parser.add_argument(
         "command", nargs="?", help="Command to run"
     )
     parser.add_argument(
@@ -236,7 +242,7 @@ def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
         )
 
     elif cmd == "status":
-        return cmd_status(room)
+        return cmd_status(room, session_id)
 
     elif cmd == "clear":
         return cmd_clear(room)
@@ -252,6 +258,16 @@ def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
 
     elif cmd == "peers":
         return cmd_peers(room)
+
+    elif cmd == "alias":
+        if not cmd_args:
+            return cmd_alias()
+        elif len(cmd_args) == 1:
+            if args.delete:
+                return cmd_alias(name=cmd_args[0], delete=True)
+            return cmd_alias(name=cmd_args[0])
+        else:
+            return cmd_alias(name=cmd_args[0], target=cmd_args[1])
 
     elif cmd == "broadcast":
         message = " ".join(cmd_args) if cmd_args else ""

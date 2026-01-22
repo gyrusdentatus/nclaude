@@ -49,19 +49,30 @@ class MockRoom:
             result["to"] = recipient
         return result
 
-    def read(self, session_id, all_messages=False, quiet=False, limit=None, msg_type=None):
+    def read(self, session_id, all_messages=False, quiet=False, limit=None, msg_type=None, for_me=False):
         self._storage.init()
         last_line = 0
         if not all_messages:
             last_line = self._storage.get_read_pointer(session_id, self.name)
 
-        lines = self._storage.get_raw_lines(self.name)
-        new_lines = lines[last_line:]
+        # Use storage-level filtering
+        recipient_filter = session_id if for_me else None
+        messages = self._storage.read_messages(
+            room=self.name,
+            since_id=last_line,
+            msg_type=msg_type,
+            recipient=recipient_filter,
+        )
 
-        if limit:
-            new_lines = new_lines[:limit]
+        if limit and len(messages) > limit:
+            messages = messages[:limit]
 
-        self._storage.set_read_pointer(session_id, self.name, len(lines))
+        # Convert to log lines
+        new_lines = [msg.to_log_line() for msg in messages]
+
+        # Get total for pointer
+        total = self._storage.get_message_count(self.name)
+        self._storage.set_read_pointer(session_id, self.name, total)
 
         if quiet and len(new_lines) == 0:
             return None
@@ -69,7 +80,7 @@ class MockRoom:
         return {
             "messages": new_lines,
             "new_count": len(new_lines),
-            "total": len(lines),
+            "total": total,
         }
 
     def status(self):

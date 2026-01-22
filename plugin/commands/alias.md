@@ -3,22 +3,22 @@ description: Manage session aliases for easier @mentions
 argument-hint: <alias-name> [session-id]
 ---
 
-Manage aliases for session IDs. This lets you use `@k8s` instead of `@cc-26146992-94a`.
+Manage aliases for session IDs. This lets others use `@og-nclaude` instead of `@cc-26146992-94a`.
 
-If arguments provided, parse them and execute:
+**If only alias name provided** - set it to YOUR current session:
+```bash
+MY_SESSION=$(nclaude whoami | jq -r .session_id)
+nclaude alias "$ARGUMENTS" "$MY_SESSION"
+```
+
+**If alias name AND session-id provided:**
 ```bash
 nclaude alias $ARGUMENTS
 ```
 
-If no arguments, list all aliases:
+**If no arguments** - list all aliases:
 ```bash
 nclaude alias
 ```
 
-**Usage:**
-- `/nclaude:alias` - List all aliases
-- `/nclaude:alias k8s` - Get alias for "k8s"
-- `/nclaude:alias k8s cc-abc123` - Set "k8s" -> "cc-abc123"
-- `/nclaude:alias k8s --delete` - Delete alias "k8s"
-
-After setting an alias, use `@k8s` in messages to target that session.
+Report the result. After setting, others can use `@<alias>` to message you.

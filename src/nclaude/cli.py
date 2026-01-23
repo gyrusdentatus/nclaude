@@ -267,7 +267,8 @@ def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
         elif len(cmd_args) == 1:
             if args.delete:
                 return cmd_alias(name=cmd_args[0], delete=True)
-            return cmd_alias(name=cmd_args[0])
+            # Auto-fill session_id when only name given
+            return cmd_alias(name=cmd_args[0], session_id=session_id)
         else:
             return cmd_alias(name=cmd_args[0], target=cmd_args[1])
 

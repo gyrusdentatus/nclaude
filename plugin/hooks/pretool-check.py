@@ -110,6 +110,12 @@ def main():
 
     session_id = get_session_id(hook_input)
 
+    # Detect which hook event called us
+    hook_event = hook_input.get("hook_event", "PreToolUse")
+    if "tool_name" not in hook_input and "tool_input" not in hook_input:
+        # No tool info = likely UserPromptSubmit
+        hook_event = "UserPromptSubmit"
+
     # Fast check
     count, max_id, messages = check_new_messages(session_id)
 
@@ -128,7 +134,7 @@ def main():
 
     output = {
         "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
+            "hookEventName": hook_event,
             "additionalContext": context
         }
     }

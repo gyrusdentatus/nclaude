@@ -9,6 +9,7 @@ def cmd_alias(
     name: Optional[str] = None,
     target: Optional[str] = None,
     delete: bool = False,
+    session_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Manage session aliases.
 
@@ -16,6 +17,7 @@ def cmd_alias(
         name: Alias name (e.g., "k8s", "main")
         target: Session ID to alias (e.g., "cc-26146992-94a")
         delete: If True, delete the alias
+        session_id: Current session ID (used when target not provided)
 
     Returns:
         Dict with aliases or operation result
@@ -25,7 +27,7 @@ def cmd_alias(
     # List all aliases
     if name is None:
         if not aliases:
-            return {"aliases": {}, "message": "No aliases set. Use: nclaude alias <name> <session-id>"}
+            return {"aliases": {}, "message": "No aliases set. Use: nclaude alias <name>"}
         return {"aliases": aliases}
 
     # Delete alias
@@ -36,15 +38,19 @@ def cmd_alias(
             return {"deleted": name}
         return {"error": f"Alias '{name}' not found"}
 
-    # Set alias
+    # Set alias - auto-fill target from session_id if not provided
     if target:
         # Strip @ prefix if present
         target = target.lstrip("@")
-        aliases[name] = target
-        save_aliases(aliases)
-        return {"set": {name: target}, "usage": f"Use @{name} to message {target}"}
+    elif session_id:
+        # Auto-fill from current session
+        target = session_id
+    else:
+        # No target and no session_id - show existing or error
+        if name in aliases:
+            return {"alias": name, "target": aliases[name]}
+        return {"error": f"Alias '{name}' not found"}
 
-    # Get single alias
-    if name in aliases:
-        return {"alias": name, "target": aliases[name]}
-    return {"error": f"Alias '{name}' not found"}
+    aliases[name] = target
+    save_aliases(aliases)
+    return {"set": {name: target}, "usage": f"Use @{name} to message {target}"}

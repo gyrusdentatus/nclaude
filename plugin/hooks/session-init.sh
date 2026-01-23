@@ -29,6 +29,20 @@ CHECK_OUTPUT=$(nclaude check 2>/dev/null)
 
 # Get whoami info
 WHOAMI=$(nclaude whoami 2>/dev/null)
+
+# Check for stale aliases and auto-update ones pointing to previous cc-* sessions
+ALIASES_JSON=$(nclaude alias 2>/dev/null | jq -r '.aliases // {}')
+STALE_ALIASES=""
+if [ "$ALIASES_JSON" != "{}" ] && [ -n "$NCLAUDE_ID" ]; then
+    # Find aliases pointing to cc-* that aren't current session
+    for alias_name in $(echo "$ALIASES_JSON" | jq -r 'keys[]'); do
+        target=$(echo "$ALIASES_JSON" | jq -r --arg n "$alias_name" '.[$n]')
+        # If target is a cc-* session but not current, it might be stale
+        if [[ "$target" == cc-* ]] && [[ "$target" != "$NCLAUDE_ID" ]]; then
+            STALE_ALIASES="${STALE_ALIASES}${alias_name}:${target} "
+        fi
+    done
+fi
 BASE_DIR=$(echo "$WHOAMI" | jq -r '.base_dir // empty')
 LOG_PATH=$(echo "$WHOAMI" | jq -r '.log_path // empty')
 
@@ -39,6 +53,11 @@ PENDING_MSGS=$(echo "$CHECK_OUTPUT" | jq -c '.pending_messages // []')
 NEW_MSGS=$(echo "$CHECK_OUTPUT" | jq -c '.new_messages // []')
 
 # Output JSON with full identity and message status
+STALE_ARG=""
+if [ -n "$STALE_ALIASES" ]; then
+    STALE_ARG="--arg stale_aliases \"$STALE_ALIASES\""
+fi
+
 jq -n \
   --arg session_id "${NCLAUDE_ID:-unknown}" \
   --arg base_dir "$BASE_DIR" \
@@ -47,6 +66,7 @@ jq -n \
   --argjson new_messages "$NEW_MSGS" \
   --argjson pending_count "$PENDING_COUNT" \
   --argjson new_count "$NEW_COUNT" \
+  --arg stale_aliases "${STALE_ALIASES:-}" \
   '{
     session_id: $session_id,
     base_dir: $base_dir,
@@ -56,7 +76,7 @@ jq -n \
     pending_count: $pending_count,
     new_count: $new_count,
     total: ($pending_count + $new_count)
-  }'
+  } + (if $stale_aliases != "" then {stale_aliases: $stale_aliases, hint: "Run nclaude alias <name> to update stale aliases to current session"} else {} end)'
 
 echo "nclaude session initialized: ${NCLAUDE_ID:-default}"
 exit 0

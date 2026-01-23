@@ -1,4 +1,4 @@
-# NCLAUDE - Claude-to-Claude Chat (v2.0.0)
+# NCLAUDE - Claude-to-Claude Chat (v2.5.4)
 
 Headless message passing between Claude Code sessions.
 
@@ -6,7 +6,7 @@ Headless message passing between Claude Code sessions.
 
 At the START of each response, check for messages:
 ```bash
-nclaude check  # Or just /ncheck
+nclaude check  # Or just /nclaude:check
 ```
 
 **Don't wait for the user to remind you!**
@@ -17,12 +17,14 @@ nclaude check  # Or just /ncheck
 
 | Slash Command | CLI Equivalent | What it does |
 |---------------|----------------|--------------|
-| `/nsend <msg>` | `nclaude send "msg"` | Send message |
-| `/ncheck` | `nclaude check` | Read all messages (pending + new) |
-| `/nread` | `nclaude read` | Read new messages only |
-| `/nstatus` | `nclaude status` | Show chat status |
-| `/nwatch` | `nclaude watch` | Live message feed |
-| `/npair <project>` | `nclaude pair <project>` | Register peer |
+| `/nclaude:send <msg>` | `nclaude send "msg"` | Send message |
+| `/nclaude:check` | `nclaude check` | Read all messages (pending + new) |
+| `/nclaude:read` | `nclaude read` | Read new messages only |
+| `/nclaude:wait [timeout]` | `nclaude wait 30` | Block until message arrives |
+| `/nclaude:status` | `nclaude status` | Show chat status |
+| `/nclaude:watch` | `nclaude watch` | Live message feed |
+| `/nclaude:pair <project>` | `nclaude pair <project>` | Register peer |
+| `/nclaude:alias [name] [id]` | `nclaude alias` | Manage session aliases |
 
 ---
 
@@ -32,8 +34,9 @@ nclaude check  # Or just /ncheck
 # Core commands
 nclaude send "message"              # Send to current project room
 nclaude send "msg" --type TASK      # Send with type
-nclaude send "msg" --global         # Send to global room
+nclaude send "msg" --to @alice      # Send to specific recipient
 nclaude check                       # Get all unread messages
+nclaude wait 30                     # Block until message arrives (30s timeout)
 nclaude read                        # Read new messages
 nclaude read --limit 10             # Limit to 10 messages
 nclaude read --filter TASK          # Only TASK messages
@@ -45,9 +48,14 @@ nclaude send "msg" --dir other-project
 nclaude pair other-project          # Register peer
 nclaude peers                       # List peers
 
+# Aliases
+nclaude alias                       # List all aliases
+nclaude alias k8s                   # Create alias @k8s for current session
+nclaude alias k8s cc-abc123         # Create alias @k8s -> cc-abc123
+
 # Info
 nclaude whoami                      # Show session ID
-nclaude --version                   # Show version (2.0.0)
+nclaude --version                   # Show version (2.5.4)
 ```
 
 ---
@@ -96,9 +104,9 @@ nclaude send "NACK: Counter-proposal - I do both, you do docs" --type REPLY
 
 ### Rules
 1. SYN requires ACK before proceeding
-2. After SYN, tell user: "Waiting for ACK"
+2. After SYN, use `nclaude wait 30` to block until reply arrives
 3. NACK restarts negotiation
-4. Don't spin-loop checking - wait for user
+4. Don't spin-loop checking - use `wait` command instead
 
 ---
 
@@ -166,24 +174,26 @@ swarm logs --all
 ```
 ┌─────────────┐     ┌─────────────┐
 │  Claude A   │     │  Claude B   │
-│  /nsend     │────▶│  /ncheck    │
+│  /send      │────▶│  /check     │
 └─────────────┘     └─────────────┘
        │                   │
        ▼                   ▼
 ┌─────────────────────────────────┐
-│  /tmp/nclaude/<repo>/messages.log │
+│     ~/.nclaude/messages.db      │
+│     (SQLite, cross-project)     │
 └─────────────────────────────────┘
 ```
 
-- Messages append to shared log (atomic via `flock`)
+- SQLite storage at `~/.nclaude/messages.db` (default, cross-project)
 - Each session tracks last-read position
-- Git-aware: same repo = same log (including worktrees)
-- Storage backends: file (default) or SQLite (`--storage sqlite`)
+- Git-aware: same repo = same room (including worktrees)
+- @mention routing with recipient field
+- UserPromptSubmit hook injects message count on every prompt
 
 ---
 
 ## Limitations
 
-- **No push**: Claude can't wake from idle - user must trigger `/ncheck`
+- **No push**: Claude can't wake from idle - use `wait` command or UserPromptSubmit hook
 - **Async only**: Message passing, not real-time chat
-- **Tokens**: Don't poll in loops - use SYN-ACK and wait
+- **Tokens**: Don't poll in loops - use `wait` command with timeout

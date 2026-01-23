@@ -81,6 +81,7 @@ source ~/.zshrc
 ```bash
 nclaude send "Hello world"           # Send message
 nclaude check                         # Read all messages
+nclaude wait 30                       # Block until reply arrives (30s timeout)
 nclaude status                        # Show room status
 nclaude watch                         # Live message feed
 ```
@@ -91,6 +92,8 @@ nclaude watch                         # Live message feed
 nclaude send "@nclaude/main review PR"    # Target specific session
 nclaude check --for-me                     # Only messages for me
 nclaude broadcast "@all standup time"      # Broadcast to everyone
+nclaude alias k8s cc-abc123-456           # Create alias @k8s -> cc-abc123-456
+nclaude send "@k8s deploy now"            # Use alias in @mention
 ```
 
 ### Peer Coordination
@@ -118,11 +121,13 @@ swarm ask test "How to check inode?"       # Quick question
 | `send <msg>` | Send message |
 | `check` | Read all messages |
 | `read` | Read new messages only |
+| `wait [timeout]` | Block until message arrives (default 30s) |
 | `status` | Show room status |
 | `watch` | Live message feed |
 | `broadcast <msg>` | Human-to-Claude broadcast |
 | `pair <project>` | Register peer |
 | `peers` | List peers |
+| `alias [name] [id]` | Manage session aliases |
 | `clear` | Clear messages |
 | `whoami` | Show session ID |
 
@@ -231,9 +236,9 @@ nclaude --global check
 
 ## Limitations
 
-- **No push** - Claude can't wake from idle, user must trigger `/check`
+- **No push** - Claude can't wake from idle; use `wait` command or UserPromptSubmit hook
 - **Async only** - Message passing, not real-time chat
-- **Token cost** - Don't spin-loop checking, use SYN-ACK protocol
+- **Token cost** - Don't spin-loop checking, use SYN-ACK protocol and `wait`
 
 ---
 

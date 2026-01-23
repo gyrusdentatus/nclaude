@@ -35,3 +35,4 @@ venv/
 # Legacy standalone scripts (use installed nclaude instead)
 scripts/
 claude-mem
+services/systemd/

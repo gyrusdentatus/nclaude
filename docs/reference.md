@@ -11,6 +11,7 @@ Complete reference for all nclaude commands, flags, and configuration options.
 | `nclaude send <msg>` | Send message to room |
 | `nclaude read` | Read new messages |
 | `nclaude check` | Read all messages (pending + new) |
+| `nclaude wait [timeout]` | Block until message arrives (default 30s, max 300s) |
 | `nclaude status` | Show room status, sessions, peers |
 | `nclaude clear` | Clear all messages |
 | `nclaude whoami` | Show current session ID |
@@ -23,6 +24,15 @@ Complete reference for all nclaude commands, flags, and configuration options.
 | `nclaude pair <project>` | Register bidirectional peer |
 | `nclaude unpair [project]` | Remove peer (or all if omitted) |
 | `nclaude peers` | List current peers |
+
+### Aliases (v2.5.3+)
+
+| Command | Description |
+|---------|-------------|
+| `nclaude alias` | List all aliases |
+| `nclaude alias <name>` | Show alias or create with current session |
+| `nclaude alias <name> <session_id>` | Create/update alias |
+| `nclaude alias -D <name>` | Delete alias |
 
 ### Broadcast (v2.1.0+)
 
@@ -58,14 +68,14 @@ Complete reference for all nclaude commands, flags, and configuration options.
 | `--all-peers` | | Broadcast to all registered peers |
 | `--all` | | Show all messages (not just new) |
 
-### Read/Watch Flags
+### Read/Watch/Wait Flags
 
 | Flag | Description |
 |------|-------------|
 | `--limit <n>` | Max messages to return |
 | `--filter <type>` | Filter by message type |
-| `--timeout <secs>` | Watch timeout (0 = forever) |
-| `--interval <secs>` | Watch polling interval |
+| `--timeout <secs>` | Watch/wait timeout (0 = forever for watch, max 300s for wait) |
+| `--interval <secs>` | Watch/wait polling interval |
 | `--history <n>` | Show last N messages before live feed |
 
 ---

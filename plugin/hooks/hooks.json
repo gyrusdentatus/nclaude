@@ -1,5 +1,5 @@
 {
-  "description": "nclaude messaging hooks - check for messages from other Claude sessions",
+  "description": "nclaude messaging hooks v3.0 - message checking, conversation analysis, peer suggestions",
   "hooks": {
     "UserPromptSubmit": [
       {
@@ -63,6 +63,28 @@
           {
             "type": "command",
             "command": "${CLAUDE_PLUGIN_ROOT}/hooks/notify-send.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/subagent-stop.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "PreCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/precompact-save.py",
             "timeout": 5
           }
         ]

@@ -102,6 +102,16 @@ class SQLiteStorage:
                 start_id INTEGER NOT NULL,
                 end_id INTEGER NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS session_metadata (
+                session_id TEXT PRIMARY KEY,
+                project_dir TEXT,
+                last_activity TEXT,
+                task_summary TEXT,
+                claimed_files TEXT,
+                pending_work TEXT,
+                updated_at TEXT
+            );
         """)
         self._conn.commit()
 
@@ -360,3 +370,96 @@ class SQLiteStorage:
             (session_id, start, end),
         )
         self._conn.commit()
+
+    def save_session_metadata(self, session_id: str, metadata: Dict[str, Any]) -> None:
+        """Save session metadata (used by PreCompact hook).
+
+        Args:
+            session_id: Session identifier
+            metadata: Dict with keys: project_dir, task_summary, claimed_files, pending_work
+        """
+        self.init()
+
+        from datetime import datetime, timezone
+
+        self._conn.execute(
+            """
+            INSERT OR REPLACE INTO session_metadata
+            (session_id, project_dir, last_activity, task_summary, claimed_files, pending_work, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                metadata.get("project_dir", ""),
+                metadata.get("last_activity", ""),
+                metadata.get("task_summary", ""),
+                json.dumps(metadata.get("claimed_files", [])),
+                json.dumps(metadata.get("pending_work", [])),
+                datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        self._conn.commit()
+
+    def get_session_metadata(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Get session metadata.
+
+        Args:
+            session_id: Session identifier
+
+        Returns:
+            Dict with session metadata, or None if not found
+        """
+        self.init()
+
+        cursor = self._conn.execute(
+            """
+            SELECT project_dir, last_activity, task_summary, claimed_files, pending_work, updated_at
+            FROM session_metadata
+            WHERE session_id = ?
+            """,
+            (session_id,),
+        )
+        row = cursor.fetchone()
+
+        if not row:
+            return None
+
+        return {
+            "session_id": session_id,
+            "project_dir": row["project_dir"],
+            "last_activity": row["last_activity"],
+            "task_summary": row["task_summary"],
+            "claimed_files": json.loads(row["claimed_files"]) if row["claimed_files"] else [],
+            "pending_work": json.loads(row["pending_work"]) if row["pending_work"] else [],
+            "updated_at": row["updated_at"],
+        }
+
+    def list_session_metadata(self) -> List[Dict[str, Any]]:
+        """List all session metadata.
+
+        Returns:
+            List of session metadata dicts
+        """
+        self.init()
+
+        cursor = self._conn.execute(
+            """
+            SELECT session_id, project_dir, last_activity, task_summary, claimed_files, pending_work, updated_at
+            FROM session_metadata
+            ORDER BY updated_at DESC
+            """
+        )
+
+        sessions = []
+        for row in cursor:
+            sessions.append({
+                "session_id": row["session_id"],
+                "project_dir": row["project_dir"],
+                "last_activity": row["last_activity"],
+                "task_summary": row["task_summary"],
+                "claimed_files": json.loads(row["claimed_files"]) if row["claimed_files"] else [],
+                "pending_work": json.loads(row["pending_work"]) if row["pending_work"] else [],
+                "updated_at": row["updated_at"],
+            })
+
+        return sessions

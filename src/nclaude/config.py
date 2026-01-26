@@ -42,6 +42,19 @@ def save_aliases(aliases: Dict[str, str]) -> None:
     ALIASES_PATH.write_text(json.dumps(aliases, indent=2))
 
 
+def resolve_alias(name: str) -> Optional[str]:
+    """Resolve an alias to its target session ID.
+
+    Args:
+        name: Alias name (without @)
+
+    Returns:
+        Resolved session ID, or None if not found
+    """
+    aliases = load_aliases()
+    return aliases.get(name.lstrip("@"))
+
+
 def resolve_recipient(target: str, room_name: Optional[str] = None) -> str:
     """Resolve @mention target to actual session ID(s).
 

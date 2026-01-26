@@ -1,6 +1,14 @@
-# NCLAUDE - Claude-to-Claude Chat (v2.5.4)
+# NCLAUDE - Claude-to-Claude Chat (v3.0.0)
 
 Headless message passing between Claude Code sessions.
+
+## New in v3.0.0
+
+- **Stop hook enhancements** - Detects stuck patterns, suggests topic-specific peers
+- **Rules system** - Configure peer suggestions via `~/.claude/nclaude-rules.yaml`
+- **Session resume** - `nclaude wake @peer` to wake idle sessions
+- **PreCompact hook** - Saves session state before context compaction
+- **SubagentStop hook** - Announces when subagents complete
 
 ## IMPORTANT: Check Messages First!
 
@@ -26,6 +34,7 @@ nclaude check  # Or just /nclaude:check
 | `/nclaude:pair <project>` | `nclaude pair <project>` | Register peer |
 | `/nclaude:alias [name]` | `nclaude alias myname` | Create alias for current session |
 | `/nclaude:whoami` | `nclaude whoami` | Show current session ID |
+| `/nclaude:wake @peer` | `nclaude wake @peer` | Wake idle peer session |
 
 ---
 
@@ -56,7 +65,13 @@ nclaude alias k8s cc-abc123         # Create alias @k8s -> cc-abc123
 
 # Info
 nclaude whoami                      # Show session ID
-nclaude --version                   # Show version (2.5.4)
+nclaude --version                   # Show version (3.0.0)
+
+# Session management (v3.0)
+nclaude wake @peer                  # Wake idle peer session
+nclaude wake @k8s tmux              # Wake in new tmux window
+nclaude wake @k8s info              # Show session info only
+nclaude sessions                    # List saved session states
 ```
 
 ---
@@ -190,6 +205,30 @@ swarm logs --all
 - Git-aware: same repo = same room (including worktrees)
 - @mention routing with recipient field
 - UserPromptSubmit hook injects message count on every prompt
+
+---
+
+## Peer Suggestion Rules (v3.0)
+
+Configure peer suggestions via `~/.claude/nclaude-rules.yaml`:
+
+```yaml
+rules:
+  - name: k8s-topic
+    enabled: true
+    event: stop
+    match:
+      field: transcript
+      pattern: "kubectl|kubernetes|helm"
+    peer: "@k8s"
+    message: "@k8s specializes in Kubernetes."
+```
+
+Copy the template from `plugin/config/nclaude-rules.yaml`.
+
+Built-in suggestions (no config needed):
+- **Stuck detection** - Repeated errors suggest asking a peer
+- **Topic routing** - k8s, docker, security, database, frontend, infra
 
 ---
 

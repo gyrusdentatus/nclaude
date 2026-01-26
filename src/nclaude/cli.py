@@ -30,6 +30,8 @@ from .commands import (
     cmd_hrecv,
     cmd_alias,
     cmd_wait,
+    cmd_wake,
+    cmd_sessions,
 )
 
 
@@ -60,6 +62,8 @@ COMMANDS:
   peers             List current peers
   alias [name] [id] Manage session aliases (@k8s -> cc-abc123)
   broadcast <msg>   Send BROADCAST from human to Claudes
+  wake @peer [m]    Wake/resume peer session (m: auto|tmux|terminal|iterm|info)
+  sessions          List all saved session states
 
 FLAGS:
   --dir, -d NAME    Target different project (name or path)
@@ -317,6 +321,17 @@ def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
 
     elif cmd == "chat":
         return cmd_chat(room)
+
+    elif cmd == "wake":
+        if not cmd_args:
+            return {"error": "Usage: nclaude wake @peer [tmux|terminal|iterm|info]"}
+        target = cmd_args[0]
+        # Second arg is method (default: auto)
+        method = cmd_args[1] if len(cmd_args) > 1 else "auto"
+        return cmd_wake(target, method)
+
+    elif cmd == "sessions":
+        return cmd_sessions()
 
     else:
         return {"error": f"Unknown command: {cmd}"}

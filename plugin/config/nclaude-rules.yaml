@@ -1,0 +1,78 @@
+# nclaude peer suggestion rules
+# Copy this file to ~/.claude/nclaude-rules.yaml to customize
+#
+# Rules are evaluated when Claude tries to stop.
+# Matching rules suggest peers without blocking.
+
+rules:
+  # Detect error loops - suggest asking for help
+  - name: stuck-error-loop
+    enabled: true
+    event: stop
+    match:
+      field: transcript
+      pattern: "(error|failed).{0,100}\\1.{0,100}\\1"
+      type: regex
+    message: |
+      You appear stuck in an error loop.
+      Consider: /nclaude:send "Need help with [error]"
+
+  # Topic: Kubernetes
+  - name: k8s-topic
+    enabled: true
+    event: stop
+    match:
+      field: transcript
+      pattern: "kubectl|kubernetes|helm|k8s|pod|deployment"
+    peer: "@k8s"
+    message: "@k8s specializes in Kubernetes infrastructure."
+
+  # Topic: Security/Auth
+  - name: security-topic
+    enabled: true
+    event: stop
+    match:
+      field: transcript
+      pattern: "jwt|oauth|credentials|auth|security|token"
+    peer: "@security"
+    message: "@security can help with authentication and security."
+
+  # Topic: Database
+  - name: database-topic
+    enabled: true
+    event: stop
+    match:
+      field: transcript
+      pattern: "postgres|mysql|redis|database|sql|migration"
+    peer: "@data"
+    message: "@data specializes in database operations."
+
+  # Topic: Docker/Containers
+  - name: docker-topic
+    enabled: true
+    event: stop
+    match:
+      field: transcript
+      pattern: "docker|container|dockerfile|compose|image"
+    peer: "@docker"
+    message: "@docker can help with containerization."
+
+  # Topic: Infrastructure
+  - name: infra-topic
+    enabled: true
+    event: stop
+    match:
+      field: transcript
+      pattern: "terraform|ansible|pulumi|cloudformation"
+    peer: "@infra"
+    message: "@infra handles infrastructure as code."
+
+  # Topic: Frontend
+  - name: frontend-topic
+    enabled: true
+    event: stop
+    match:
+      field: transcript
+      pattern: "react|vue|angular|frontend|css|tailwind"
+    peer: "@frontend"
+    message: "@frontend specializes in UI development."

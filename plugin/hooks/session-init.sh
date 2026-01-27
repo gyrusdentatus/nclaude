@@ -1,24 +1,37 @@
 #!/bin/bash
 # SessionStart hook: Initialize nclaude session
-# - Set NCLAUDE_ID from Claude Code session_id
+# - Generate semantic session ID: {repo}/{branch}-{instance}
 # - Initialize "last seen" message count
 # - Initialize Aqua coordination if available
 
 INPUT=$(cat)
 
-# Extract session_id
-CC_SESSION_ID=$(echo "$INPUT" | jq -r '.session_id // empty' 2>/dev/null)
-if [ -n "$CC_SESSION_ID" ]; then
-    SHORT_ID=$(echo "$CC_SESSION_ID" | cut -c1-12)
-    NCLAUDE_ID="cc-${SHORT_ID}"
+# Generate semantic session ID: {repo}/{branch}-{instance}
+# This is more meaningful than cc-abc123 random IDs
+REPO_NAME=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null || echo "unknown")
+BRANCH=$(git branch --show-current 2>/dev/null || echo "main")
+BRANCH_SAFE=$(echo "$BRANCH" | tr '/' '-' | tr ' ' '-')
 
-    # Persist to env file
-    if [ -n "$CLAUDE_ENV_FILE" ]; then
-        echo "export NCLAUDE_ID=\"${NCLAUDE_ID}\"" >> "$CLAUDE_ENV_FILE"
-    fi
+# Find next available instance via aqua ps (if aqua exists)
+PREFIX="${REPO_NAME}/${BRANCH_SAFE}"
+NCLAUDE_ID="${PREFIX}-1"  # Default
 
-    export NCLAUDE_ID
+if command -v aqua &> /dev/null; then
+    for i in 1 2 3 4 5 6 7 8 9; do
+        CANDIDATE="${PREFIX}-${i}"
+        if ! aqua ps 2>/dev/null | grep -q "^${CANDIDATE}[[:space:]]"; then
+            NCLAUDE_ID="$CANDIDATE"
+            break
+        fi
+    done
 fi
+
+# Persist to env file
+if [ -n "$CLAUDE_ENV_FILE" ]; then
+    echo "export NCLAUDE_ID=\"${NCLAUDE_ID}\"" >> "$CLAUDE_ENV_FILE"
+fi
+
+export NCLAUDE_ID
 
 # Initialize Aqua coordination (if aqua is installed AND project has .aqua/)
 # NOTE: Aqua is opt-in. User must run 'aqua init' manually to enable it.
@@ -54,15 +67,23 @@ CHECK_OUTPUT=$(nclaude check 2>/dev/null)
 # Get whoami info
 WHOAMI=$(nclaude whoami 2>/dev/null)
 
-# Check for stale aliases and auto-update ones pointing to previous cc-* sessions
+# Check for stale aliases
+# Old format: cc-abc123, new format: repo/branch-N
+# Stale = same repo/branch prefix but different instance, or old cc-* format
 ALIASES_JSON=$(nclaude alias 2>/dev/null | jq -r '.aliases // {}')
 STALE_ALIASES=""
 if [ "$ALIASES_JSON" != "{}" ] && [ -n "$NCLAUDE_ID" ]; then
-    # Find aliases pointing to cc-* that aren't current session
     for alias_name in $(echo "$ALIASES_JSON" | jq -r 'keys[]'); do
         target=$(echo "$ALIASES_JSON" | jq -r --arg n "$alias_name" '.[$n]')
-        # If target is a cc-* session but not current, it might be stale
-        if [[ "$target" == cc-* ]] && [[ "$target" != "$NCLAUDE_ID" ]]; then
+        # Skip if it's the current session
+        if [[ "$target" == "$NCLAUDE_ID" ]]; then
+            continue
+        fi
+        # Old cc-* format is definitely stale
+        if [[ "$target" == cc-* ]]; then
+            STALE_ALIASES="${STALE_ALIASES}${alias_name}:${target} "
+        # Same repo/branch but different instance number might be stale
+        elif [[ "$target" == "${PREFIX}-"* ]] && [[ "$target" != "$NCLAUDE_ID" ]]; then
             STALE_ALIASES="${STALE_ALIASES}${alias_name}:${target} "
         fi
     done

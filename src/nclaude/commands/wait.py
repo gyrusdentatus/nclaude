@@ -3,41 +3,48 @@
 import time
 from typing import Any, Dict
 
-from ..rooms.base import Room
+from ..aqua_bridge import read_messages
 
 
 def cmd_wait(
-    room: Room,
-    session_id: str,
     timeout: int = 30,
     interval: float = 1.0,
+    global_: bool = False,
 ) -> Dict[str, Any]:
     """Block until new messages arrive or timeout.
 
     Args:
-        room: Room to monitor
-        session_id: Session ID waiting for messages
-        timeout: Maximum seconds to wait (0 = wait forever, but that's dangerous)
+        timeout: Maximum seconds to wait (0 = wait forever, capped at 300s)
         interval: Seconds between checks
+        global_: If True, wait on global room
 
     Returns:
         Dict with messages if found, or timeout status
     """
     start = time.time()
-    initial_count = room.storage.get_message_count(room.name)
+
+    # Get initial message count (by tracking IDs)
+    initial_msgs = read_messages(unread_only=True, global_=global_)
+    initial_ids = {m.get("id") for m in initial_msgs}
 
     # Cap timeout at 5 minutes to prevent infinite waits
     if timeout <= 0 or timeout > 300:
         timeout = 300
 
     while time.time() - start < timeout:
-        current_count = room.storage.get_message_count(room.name)
+        current_msgs = read_messages(unread_only=True, global_=global_)
+        current_ids = {m.get("id") for m in current_msgs}
 
-        if current_count > initial_count:
+        # Check for new messages
+        new_ids = current_ids - initial_ids
+        if new_ids:
             # New messages arrived - return them
-            result = room.read(session_id)
-            result["waited"] = round(time.time() - start, 1)
-            return result
+            new_msgs = [m for m in current_msgs if m.get("id") in new_ids]
+            return {
+                "messages": new_msgs,
+                "new_count": len(new_msgs),
+                "waited": round(time.time() - start, 1),
+            }
 
         time.sleep(interval)
 

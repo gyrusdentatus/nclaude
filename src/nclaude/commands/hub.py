@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..utils.git import get_auto_session_id
+from ..aqua_bridge import get_session_id
 
 
 def _get_scripts_dir() -> Path:
@@ -54,7 +54,7 @@ def cmd_connect(session_id: Optional[str] = None) -> Dict[str, Any]:
     if not client_script.exists():
         return {"error": f"Client script not found: {client_script}"}
 
-    session_id = session_id or get_auto_session_id()
+    session_id = session_id or get_session_id()
 
     proc = subprocess.run(
         ["python3", str(client_script), "connect", session_id],

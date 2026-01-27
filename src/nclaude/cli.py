@@ -1,14 +1,16 @@
-"""CLI argument parsing and command dispatch for nclaude."""
+"""CLI argument parsing and command dispatch for nclaude.
+
+nclaude is a thin wrapper around aqua for Claude Code integration.
+All core functionality delegates to aqua_bridge.
+"""
 
 import argparse
 import json
 import sys
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from . import __version__
-from .config import create_config
-from .rooms import get_room
-from .utils.git import get_auto_session_id
+from .aqua_bridge import get_session_id
 from .commands import (
     cmd_send,
     cmd_read,
@@ -39,84 +41,55 @@ from .transports.gchat import GChatTransport
 def show_help() -> None:
     """Human-friendly help output."""
     help_text = """
-nclaude - Claude-to-Claude Chat
-===============================
+nclaude - Claude-to-Claude Chat (powered by aqua)
+==================================================
 
-QUICK START (3 terminals):
-  Terminal 1 (human):  nclaude watch
-  Terminal 2 (claude): nclaude send "hello" && nclaude check
-  Terminal 3 (claude): nclaude check && nclaude send "hi back"
+QUICK START:
+  nclaude send "hello"              # Send message
+  nclaude check                     # Read unread messages
+  nclaude watch                     # Live message feed
 
 COMMANDS:
-  send <msg>        Send message to all sessions
-  check             Read all messages (pending + new)
-  read              Read new messages only
+  send <msg>        Send message
+  check             Read all unread messages
+  read              Read messages (with filtering options)
   wait [timeout]    Block until message arrives (default 30s)
-  watch             Live message feed (like tail -f but pretty)
-  status            Show chat status, sessions, and peers
-  pending           Show messages from listen daemon
-  listen            Start background message listener
-  clear             Clear all messages
+  watch             Live message feed
+  status            Show session and aqua status
   whoami            Show current session ID
-  pair <project>    Register peer for coordination
-  unpair [project]  Remove peer (or all peers)
-  peers             List current peers
-  alias [name] [id] Manage session aliases (@k8s -> cc-abc123)
-  broadcast <msg>   Send BROADCAST from human to Claudes
-  wake @peer [m]    Wake/resume peer session (m: auto|tmux|terminal|iterm|info)
-  sessions          List all saved session states
+  alias [name] [id] Manage session aliases
+
+COORDINATION (via aqua):
+  These commands delegate to aqua CLI for multi-agent coordination.
+  Run 'aqua init' to enable coordination in your project.
 
 FLAGS:
-  --dir, -d NAME    Target different project (name or path)
-  --type TYPE       Message type: MSG|TASK|REPLY|STATUS|URGENT|ERROR
-  --timeout SECS    Timeout for watch command (0 = forever, default 60)
-  --interval SECS   Polling interval for watch (default 1.0)
-  --history N       Show last N lines before starting live feed
-  --limit N         Max messages to return (for read command)
-  --filter TYPE     Filter by type: TASK|REPLY|STATUS|URGENT|ERROR
-  --all             Show all messages (not just new)
-  --quiet, -q       Minimal output
-  --global, -g      Use global room (~/.nclaude/)
+  --global, -g      Use global room (~/.aqua/)
   --to @NAME        Send to specific recipient
-  --for-me          Only show messages addressed to me
-  --all-peers       Broadcast to all registered peers
-  --gchat           Also send/check via Google Chat (remote peers)
-  --gchat-only      Only use Google Chat, skip local
+  --type TYPE       Message type: MSG|TASK|REPLY|STATUS|URGENT|ERROR
+  --gchat           Also send/check via Google Chat
+  --timeout SECS    Timeout for watch/wait (default 60)
+  --limit N         Max messages to return
+  --quiet, -q       Minimal output
 
 EXAMPLES:
-  nclaude watch                           # live message feed
-  nclaude watch --timeout 0               # watch forever
-  nclaude watch --history 20              # show last 20 msgs then live
-  nclaude watch --timeout 120 --interval 2
   nclaude send "Starting work on auth"
-  nclaude send "Need review" --dir other-project
-  nclaude read --dir /path/to/other/repo
-  nclaude send "hello global" --global    # global room
-  nclaude read --global                   # read from global room
-  nclaude pair other-project              # register peer
-  nclaude peers                           # list my peers
-  nclaude unpair other-project            # remove specific peer
-  nclaude send "CLAIMING: src/api.py" --type URGENT
-  nclaude send "ACK: confirmed" --type REPLY
+  nclaude send "Need help" --to @frontend
   nclaude check
-  nclaude status
-  nclaude broadcast "standup in 5" --all-peers  # to all peers
-  nclaude broadcast "@main @feat-xyz review PR"  # to specific sessions
-  nclaude broadcast "@all emergency alert"       # to everyone
+  nclaude watch --timeout 0          # Watch forever
+  nclaude alias k8s                  # Create alias for current session
+  nclaude send "hello" --global      # Global room
 
-PROTOCOL:
-  SYN-ACK: Before parallel work, coordinate who does what
-    A: nclaude send "SYN: I do X, you do Y. ACK?" --type TASK
-    B: nclaude send "ACK: confirmed" --type REPLY
+SESSION ID FORMAT:
+  New: {repo}/{branch}-{instance}    (e.g., nclaude/main-1)
+  Old: cc-{12chars}                  (deprecated)
 
-  CLAIMING: Before editing shared files
-    nclaude send "CLAIMING: path/to/file" --type URGENT
-    ... do work ...
-    nclaude send "RELEASED: path/to/file" --type STATUS
-
-LOG LOCATION:
-  /tmp/nclaude/<repo-name>/messages.log
-  ~/.nclaude/messages.log (global room)
+For aqua coordination commands:
+  aqua join          # Join project as agent
+  aqua task add      # Add task to queue
+  aqua task claim    # Claim next task
+  aqua lock <file>   # Acquire file lock
+  aqua status        # Full coordination status
 """
     print(help_text)
 
@@ -125,7 +98,7 @@ def create_parser() -> argparse.ArgumentParser:
     """Create the argument parser."""
     parser = argparse.ArgumentParser(
         prog="nclaude",
-        description="Headless Claude-to-Claude messaging",
+        description="Claude-to-Claude messaging (powered by aqua)",
         add_help=False,
     )
     parser.add_argument(
@@ -135,11 +108,8 @@ def create_parser() -> argparse.ArgumentParser:
         "-v", "--version", action="store_true", help="Show version"
     )
     parser.add_argument(
-        "-d", "--dir", dest="dir", help="Target different project (name or path)"
-    )
-    parser.add_argument(
         "-g", "--global", dest="use_global", action="store_true",
-        help="Use global room (~/.nclaude/)"
+        help="Use global room (~/.aqua/)"
     )
     parser.add_argument(
         "-q", "--quiet", action="store_true", help="Minimal output"
@@ -165,11 +135,11 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--limit", type=int, default=None,
-        help="Maximum messages to return (for read command)"
+        help="Maximum messages to return"
     )
     parser.add_argument(
         "--filter", dest="filter_type", default=None,
-        help="Filter by message type: TASK|REPLY|STATUS|URGENT|ERROR"
+        help="Filter by message type"
     )
     parser.add_argument(
         "--to", dest="to_recipient", default=None,
@@ -177,11 +147,7 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--for-me", dest="for_me", action="store_true",
-        help="Only show messages addressed to me (or broadcast)"
-    )
-    parser.add_argument(
-        "--storage", default="sqlite",
-        help="Storage backend: sqlite|file (sqlite uses ~/.nclaude/messages.db)"
+        help="Only show messages addressed to me"
     )
     parser.add_argument(
         "--all-peers", dest="all_peers", action="store_true",
@@ -189,11 +155,11 @@ def create_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--delete", "-D", dest="delete", action="store_true",
-        help="Delete alias (for alias command)"
+        help="Delete alias"
     )
     parser.add_argument(
         "--gchat", dest="gchat", action="store_true",
-        help="Also send/check via Google Chat (remote peers)"
+        help="Also send/check via Google Chat"
     )
     parser.add_argument(
         "--gchat-only", dest="gchat_only", action="store_true",
@@ -210,143 +176,118 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
-    """Run a command based on parsed args.
-
-    Args:
-        args: Parsed command line arguments
-
-    Returns:
-        Dict result to print as JSON, or None for commands that handle output
-    """
+    """Run a command based on parsed args."""
     cmd = args.command
     cmd_args = args.args or []
 
-    # Get room and session
-    room = get_room(
-        use_global=args.use_global,
-        dir_override=args.dir,
-        storage_backend=args.storage,
-    )
-    session_id = get_auto_session_id()
-
     # Command dispatch
-    if cmd == "init":
-        room.storage.init()
-        return {"status": "ok", "path": str(room.path)}
-
-    elif cmd == "whoami":
-        return cmd_whoami(room, session_id)
+    if cmd == "whoami":
+        return cmd_whoami()
 
     elif cmd == "send":
-        # Handle session_id in args for backwards compatibility
-        if len(cmd_args) >= 2:
-            # Explicit session_id provided
-            session_id = cmd_args[0]
-            message = " ".join(cmd_args[1:])
-        elif len(cmd_args) == 1:
-            message = cmd_args[0]
-        else:
-            message = ""
-
+        message = " ".join(cmd_args) if cmd_args else ""
         result = {}
 
         # Send to local unless --gchat-only
         if not args.gchat_only:
-            result["local"] = cmd_send(room, session_id, message, args.msg_type.upper(), to=args.to_recipient)
+            result["local"] = cmd_send(
+                message,
+                args.msg_type.upper(),
+                to=args.to_recipient,
+                global_=args.use_global,
+            )
 
         # Send to gchat if --gchat or --gchat-only
         if args.gchat or args.gchat_only:
+            session_id = get_session_id()
             gchat = GChatTransport()
-            result["gchat"] = gchat.queue_send(session_id, message, args.msg_type.upper(), args.to_recipient)
+            result["gchat"] = gchat.queue_send(
+                session_id, message, args.msg_type.upper(), args.to_recipient
+            )
 
         return result if len(result) > 1 else result.get("local") or result.get("gchat")
 
     elif cmd == "read":
-        if cmd_args:
-            session_id = cmd_args[0]
         return cmd_read(
-            room, session_id, args.all, args.quiet,
-            limit=args.limit, msg_type=args.filter_type
+            all_messages=args.all,
+            quiet=args.quiet,
+            limit=args.limit,
+            msg_type=args.filter_type,
+            for_me=args.for_me,
+            global_=args.use_global,
         )
 
     elif cmd == "status":
-        result = cmd_status(room, session_id)
-        # Add gchat status if --gchat flag
+        result = cmd_status()
         if args.gchat or args.gchat_only:
             gchat = GChatTransport()
             result["gchat"] = gchat.status()
         return result
 
     elif cmd == "clear":
-        return cmd_clear(room)
+        return cmd_clear()
 
     elif cmd == "pair":
         if not cmd_args:
             return {"error": "Usage: nclaude pair <project-name>"}
-        return cmd_pair(room, session_id, cmd_args[0])
+        return cmd_pair(cmd_args[0])
 
     elif cmd == "unpair":
         target = cmd_args[0] if cmd_args else None
-        return cmd_unpair(room, target)
+        return cmd_unpair(target)
 
     elif cmd == "peers":
-        return cmd_peers(room)
+        return cmd_peers()
 
     elif cmd == "alias":
+        session_id = get_session_id()
         if not cmd_args:
             return cmd_alias()
         elif len(cmd_args) == 1:
             if args.delete:
                 return cmd_alias(name=cmd_args[0], delete=True)
-            # Auto-fill session_id when only name given
             return cmd_alias(name=cmd_args[0], session_id=session_id)
         else:
             return cmd_alias(name=cmd_args[0], target=cmd_args[1])
 
     elif cmd == "broadcast":
         message = " ".join(cmd_args) if cmd_args else ""
-        return cmd_broadcast(room, message, all_peers=args.all_peers)
+        return cmd_broadcast(message, all_peers=args.all_peers)
 
     elif cmd == "pending":
-        if cmd_args:
-            session_id = cmd_args[0]
-        return cmd_pending(room, session_id)
+        return cmd_pending()
 
     elif cmd == "check":
-        if cmd_args:
-            session_id = cmd_args[0]
-
         result = {}
 
         # Check local unless --gchat-only
         if not args.gchat_only:
-            result["local"] = cmd_check(room, session_id, for_me=args.for_me)
+            result["local"] = cmd_check(for_me=args.for_me, global_=args.use_global)
 
         # Check gchat inbox if --gchat or --gchat-only
         if args.gchat or args.gchat_only:
+            session_id = get_session_id()
             gchat = GChatTransport()
             inbox_msgs = gchat.read_inbox(session_id)
             result["gchat"] = {
                 "messages": inbox_msgs,
                 "count": len(inbox_msgs),
-                "hint": "Run /nclaude:gchat sync to fetch new messages from Google Chat",
+                "hint": "Run /nclaude:gchat sync to fetch from Google Chat",
             }
 
         return result if len(result) > 1 else result.get("local") or result.get("gchat")
 
     elif cmd == "listen":
-        if cmd_args:
-            session_id = cmd_args[0]
-        cmd_listen(room, session_id, int(args.interval))
-        return None  # listen handles its own output
+        cmd_listen(int(args.interval))
+        return None
 
     elif cmd == "watch":
-        cmd_watch(room, session_id, args.timeout, args.interval, args.history)
-        return None  # watch handles its own output
+        cmd_watch(args.timeout, args.interval, args.history, args.use_global)
+        return None
 
     elif cmd == "wait":
         wait_timeout = int(cmd_args[0]) if cmd_args else args.timeout
-        return cmd_wait(room, session_id, wait_timeout, args.interval)
+        return cmd_wait(wait_timeout, args.interval, args.use_global)
 
     elif cmd == "hub":
         subcmd = cmd_args[0] if cmd_args else "status"
@@ -364,13 +305,12 @@ def run_command(args: argparse.Namespace) -> Optional[Dict[str, Any]]:
         return cmd_hrecv(args.timeout)
 
     elif cmd == "chat":
-        return cmd_chat(room)
+        return cmd_chat()
 
     elif cmd == "wake":
         if not cmd_args:
             return {"error": "Usage: nclaude wake @peer [tmux|terminal|iterm|info]"}
         target = cmd_args[0]
-        # Second arg is method (default: auto)
         method = cmd_args[1] if len(cmd_args) > 1 else "auto"
         return cmd_wake(target, method)
 
@@ -398,7 +338,6 @@ def main() -> None:
     try:
         result = run_command(args)
 
-        # In quiet mode, only print if there's something to say
         if result is not None:
             print(json.dumps(result, indent=2))
 

@@ -1,11 +1,14 @@
-"""Pair/unpair/peers command implementations."""
+"""Pair/unpair/peers command implementations - using aqua global messaging."""
 
 import json
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from ..config import PEERS_FILE, get_base_dir
-from ..rooms.base import Room
-from ..storage.file import FileStorage
+from ..aqua_bridge import get_project_path, send_message
+
+
+# Legacy peers file for backwards compatibility
+PEERS_FILE = Path("/tmp/nclaude/.peers")
 
 
 def load_peers() -> Dict[str, List[str]]:
@@ -24,18 +27,20 @@ def save_peers(peers: Dict[str, List[str]]) -> None:
     PEERS_FILE.write_text(json.dumps(peers, indent=2))
 
 
-def cmd_pair(room: Room, session_id: str, target_project: str) -> Dict[str, Any]:
+def cmd_pair(target_project: str) -> Dict[str, Any]:
     """Register a peer relationship.
 
+    Note: With aqua's global messaging, explicit pairing is less necessary.
+    Messages can be sent to any agent via @mention.
+
     Args:
-        room: Current room
-        session_id: Current session ID
         target_project: Project to pair with
 
     Returns:
         Dict with pairing status
     """
-    current = room.name
+    project_path = get_project_path()
+    current = project_path.name if project_path else "unknown"
     peers = load_peers()
 
     # Add bidirectional pairing
@@ -51,42 +56,33 @@ def cmd_pair(room: Room, session_id: str, target_project: str) -> Dict[str, Any]
 
     save_peers(peers)
 
-    # Also send a PAIRED message to the target
-    target_base = get_base_dir(override=target_project)
-    target_storage = FileStorage(base_dir=target_base)
-    target_storage.init()
-
-    from ..storage.base import Message
-
-    message = Message.create(
-        room=target_project,
-        session_id=session_id,
-        content=f"PAIRED: {current} is now paired with you",
-        msg_type="STATUS",
+    # Send a notification via global messaging
+    send_message(
+        content=f"PAIRED: {current} is now paired with {target_project}",
+        message_type="status",
+        global_=True,
     )
-    target_storage.append_message(message)
 
     return {
         "status": "paired",
         "project": current,
         "peer": target_project,
         "all_peers": peers[current],
+        "hint": "With aqua, you can message any agent directly via @mention without explicit pairing.",
     }
 
 
-def cmd_unpair(
-    room: Room, target_project: Optional[str] = None
-) -> Dict[str, Any]:
+def cmd_unpair(target_project: Optional[str] = None) -> Dict[str, Any]:
     """Remove a peer relationship (or all if target is None).
 
     Args:
-        room: Current room
         target_project: Specific peer to remove, or None for all
 
     Returns:
         Dict with unpairing status
     """
-    current = room.name
+    project_path = get_project_path()
+    current = project_path.name if project_path else "unknown"
     peers = load_peers()
 
     if target_project:
@@ -108,16 +104,14 @@ def cmd_unpair(
         return {"status": "unpaired_all", "project": current, "removed": removed}
 
 
-def cmd_peers(room: Room) -> Dict[str, Any]:
+def cmd_peers() -> Dict[str, Any]:
     """List all peers for current project.
-
-    Args:
-        room: Current room
 
     Returns:
         Dict with peer info
     """
-    current = room.name
+    project_path = get_project_path()
+    current = project_path.name if project_path else "unknown"
     peers = load_peers()
     my_peers = peers.get(current, [])
 
@@ -125,4 +119,5 @@ def cmd_peers(room: Room) -> Dict[str, Any]:
         "project": current,
         "peers": my_peers,
         "all_pairings": peers,
+        "hint": "With aqua, you can message any agent directly via @mention.",
     }

@@ -1,15 +1,14 @@
 """Broadcast command implementation for human-to-Claude messaging."""
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
-from ..config import resolve_recipient
-from ..rooms.base import Room
+from ..aqua_bridge import send_message, resolve_alias, get_project_path
 from .pair import load_peers
 
 
 def parse_broadcast_targets(
-    message: str, all_peers: bool = False, room: Optional[Room] = None
+    message: str, all_peers: bool = False
 ) -> Tuple[str, List[str]]:
     """Parse broadcast targets from message or flags.
 
@@ -21,7 +20,6 @@ def parse_broadcast_targets(
     Args:
         message: Raw message content potentially starting with @mentions
         all_peers: If True, load and use all registered peers
-        room: Current room (needed for --all-peers)
 
     Returns:
         Tuple of (cleaned_message, list_of_recipients)
@@ -29,10 +27,10 @@ def parse_broadcast_targets(
     """
     # Handle --all-peers flag
     if all_peers:
-        if room is None:
-            return message, []
+        project_path = get_project_path()
+        project_name = project_path.name if project_path else "unknown"
         peers = load_peers()
-        peer_list = peers.get(room.name, [])
+        peer_list = peers.get(project_name, [])
         return message, peer_list
 
     # Parse multiple @mentions from start of message
@@ -45,7 +43,7 @@ def parse_broadcast_targets(
             # @all or @* = true broadcast (no filtering)
             if target in ("all", "*"):
                 return remaining[match.end():].strip(), []
-            targets.append(resolve_recipient(target))
+            targets.append(resolve_alias(target))
             remaining = remaining[match.end():]
         else:
             break
@@ -53,9 +51,7 @@ def parse_broadcast_targets(
     return remaining.strip(), targets
 
 
-def cmd_broadcast(
-    room: Room, message: str, all_peers: bool = False
-) -> Dict[str, Any]:
+def cmd_broadcast(message: str, all_peers: bool = False) -> Dict[str, Any]:
     """Send a BROADCAST message from HUMAN to specified targets.
 
     Supports three modes:
@@ -64,7 +60,6 @@ def cmd_broadcast(
     3. `@all msg`: True broadcast (no recipient filtering)
 
     Args:
-        room: Room to broadcast to
         message: Message content (may contain @mentions)
         all_peers: If True, send to all registered peers
 
@@ -74,31 +69,29 @@ def cmd_broadcast(
     if not message:
         return {"error": "No message provided"}
 
-    cleaned_msg, targets = parse_broadcast_targets(message, all_peers, room)
+    cleaned_msg, targets = parse_broadcast_targets(message, all_peers)
 
     if not cleaned_msg:
         return {"error": "No message content after parsing targets"}
 
     if not targets:
         # True broadcast to all (recipient=None)
-        result = room.send(
-            "HUMAN",
-            f"[BROADCAST TO: @all] {cleaned_msg}",
-            "BROADCAST",
-            recipient=None,
+        result = send_message(
+            content=f"[BROADCAST TO: @all] {cleaned_msg}",
+            to=None,
+            message_type="broadcast",
         )
-        return {**result, "broadcast_to": "all", "targets": []}
+        return {**result, "broadcast_to": "all", "targets": [], "from": "HUMAN"}
 
     # Send to each specific target
     results = []
     for target in targets:
-        r = room.send(
-            "HUMAN",
-            f"[BROADCAST TO: @{target}] {cleaned_msg}",
-            "BROADCAST",
-            recipient=target,
+        r = send_message(
+            content=f"[BROADCAST TO: @{target}] {cleaned_msg}",
+            to=target,
+            message_type="broadcast",
         )
-        results.append({"to": target, "timestamp": r["timestamp"]})
+        results.append({"to": target, "id": r.get("id")})
 
     return {
         "sent": cleaned_msg,

@@ -1,15 +1,16 @@
 ---
-description: Check for pending messages from listen daemon
+description: Check for pending messages (deprecated - use check instead)
 ---
 
-Check for pending messages that the listen daemon has queued. Execute this command:
+**DEPRECATED:** The listen daemon is no longer needed with aqua backend.
+
+Use `/nclaude:check` instead:
 
 ```
-nclaude pending
+nclaude check
 ```
 
-If pending messages exist:
-- Display them in a readable format
-- Note that these were queued by the background listener
-
-If no pending messages, say "No pending messages."
+The messaging system now uses aqua's SQLite database which provides:
+- Persistent message storage
+- Unread message tracking
+- No need for background daemon

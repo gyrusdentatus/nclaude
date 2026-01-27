@@ -1,15 +1,18 @@
-"""Status command implementation."""
+"""Status command implementation - delegates to aqua_bridge."""
 
+from pathlib import Path
 from typing import Any, Dict, List
+import json
 
-from ..rooms.base import Room
-from ..config import PEERS_FILE
+from ..aqua_bridge import get_status, get_session_id, get_project_path
+
+
+# Legacy peers file for backwards compatibility
+PEERS_FILE = Path("/tmp/nclaude/.peers")
 
 
 def load_peers() -> Dict[str, List[str]]:
     """Load peers from global peers file."""
-    import json
-
     if not PEERS_FILE.exists():
         return {}
     try:
@@ -18,25 +21,23 @@ def load_peers() -> Dict[str, List[str]]:
         return {}
 
 
-def cmd_status(room: Room, session_id: str = None) -> Dict[str, Any]:
-    """Get room status with peer info and session identity.
-
-    Args:
-        room: Room to get status for
-        session_id: Current session ID (for whoami info)
+def cmd_status() -> Dict[str, Any]:
+    """Get comprehensive status info.
 
     Returns:
-        Dict with status info including peers and session identity
+        Dict with session, aqua, and peer status
     """
-    status = room.status()
+    # Get aqua status
+    status = get_status()
 
-    # Add peer info
+    # Add peer info for backwards compatibility
+    project_path = get_project_path()
+    project_name = project_path.name if project_path else "unknown"
     peers = load_peers()
-    project_name = room.name
     status["peers"] = peers.get(project_name, [])
 
-    # Add session identity (whoami)
-    if session_id:
-        status["session_id"] = session_id
+    # Add legacy fields for compatibility
+    status["room_name"] = project_name
+    status["message_count"] = 0  # Deprecated, use aqua messaging
 
     return status

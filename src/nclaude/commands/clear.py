@@ -2,16 +2,18 @@
 
 from typing import Any, Dict
 
-from ..rooms.base import Room
 
+def cmd_clear() -> Dict[str, Any]:
+    """Clear is deprecated with aqua backend.
 
-def cmd_clear(room: Room) -> Dict[str, Any]:
-    """Clear all messages and session data.
-
-    Args:
-        room: Room to clear
+    In a multi-agent system, clearing all messages is dangerous.
+    Use `aqua` CLI directly for administrative tasks.
 
     Returns:
-        Dict with status
+        Dict with warning
     """
-    return room.clear()
+    return {
+        "warning": "Clear is deprecated with aqua backend",
+        "hint": "Messages are now managed by aqua. Use 'aqua' CLI for admin tasks.",
+        "status": "skipped",
+    }

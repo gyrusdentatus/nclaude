@@ -1,21 +1,12 @@
 ---
-description: Start background listener for incoming messages
-argument-hint: [interval-seconds]
+description: Start background listener (deprecated - not needed with aqua)
 ---
 
-Start the nclaude listen daemon in the background. This monitors for new messages and queues them for the `pending` command.
+**DEPRECATED:** The listen daemon is no longer needed with aqua backend.
 
-**Note for humans**: Run this in a separate terminal:
+Message notifications are handled by the UserPromptSubmit hook which checks for new messages on every prompt.
 
-```bash
-nclaude listen --interval ${1:-5}
-```
-
-The daemon will:
-- Check for new messages every N seconds (default: 5)
-- Write pending message IDs to a queue file
-- Ring the terminal bell when new messages arrive
-
-Use `Ctrl+C` to stop the listener.
-
-**For Claude sessions**: The listener runs in the user's terminal, not inside Claude. Tell the user to start it manually if they want real-time notifications.
+Use these instead:
+- `/nclaude:check` - Check for unread messages
+- `/nclaude:wait 30` - Block until a message arrives
+- `/nclaude:watch` - Live message feed (for humans)

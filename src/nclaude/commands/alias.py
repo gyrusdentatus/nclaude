@@ -1,8 +1,8 @@
-"""Alias command implementation."""
+"""Alias command implementation - delegates to aqua_bridge."""
 
 from typing import Any, Dict, Optional
 
-from ..config import load_aliases, save_aliases
+from ..aqua_bridge import create_alias, delete_alias, get_aliases, get_session_id
 
 
 def cmd_alias(
@@ -15,26 +15,23 @@ def cmd_alias(
 
     Args:
         name: Alias name (e.g., "k8s", "main")
-        target: Session ID to alias (e.g., "cc-26146992-94a")
+        target: Session ID to alias (e.g., "nclaude/main-1")
         delete: If True, delete the alias
         session_id: Current session ID (used when target not provided)
 
     Returns:
         Dict with aliases or operation result
     """
-    aliases = load_aliases()
-
     # List all aliases
     if name is None:
+        aliases = get_aliases()
         if not aliases:
             return {"aliases": {}, "message": "No aliases set. Use: nclaude alias <name>"}
         return {"aliases": aliases}
 
     # Delete alias
     if delete:
-        if name in aliases:
-            del aliases[name]
-            save_aliases(aliases)
+        if delete_alias(name):
             return {"deleted": name}
         return {"error": f"Alias '{name}' not found"}
 
@@ -46,11 +43,8 @@ def cmd_alias(
         # Auto-fill from current session
         target = session_id
     else:
-        # No target and no session_id - show existing or error
-        if name in aliases:
-            return {"alias": name, "target": aliases[name]}
-        return {"error": f"Alias '{name}' not found"}
+        # No target and no session_id - get from environment
+        target = get_session_id()
 
-    aliases[name] = target
-    save_aliases(aliases)
+    create_alias(name, target)
     return {"set": {name: target}, "usage": f"Use @{name} to message {target}"}

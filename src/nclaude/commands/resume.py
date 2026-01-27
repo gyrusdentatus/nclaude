@@ -1,14 +1,12 @@
 """Wake/resume command implementation."""
 
-import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from ..config import resolve_alias
-from ..storage.sqlite import SQLiteStorage, GLOBAL_DB_PATH
+from ..aqua_bridge import resolve_alias, get_project_db
 
 
 def cmd_wake(
@@ -19,7 +17,7 @@ def cmd_wake(
     """Wake a peer session with their saved context.
 
     Args:
-        target: Session alias or ID (e.g., "@k8s" or "cc-abc123")
+        target: Session alias or ID (e.g., "@k8s" or "nclaude/main-1")
         method: Wake method - "auto", "tmux", "terminal", "iterm", or "info"
         message: Optional message to include in wake
 
@@ -29,23 +27,23 @@ def cmd_wake(
     # Resolve alias
     session_id = target.lstrip("@")
     resolved = resolve_alias(session_id)
-    if resolved:
+    if resolved and resolved != session_id:
         session_id = resolved
 
-    # Get session metadata
-    storage = SQLiteStorage(Path.cwd())
-    metadata = storage.get_session_metadata(session_id)
+    # Try to get agent info from aqua
+    db = get_project_db()
+    agent = None
+    if db:
+        agent = db.get_agent_by_name(session_id) or db.get_agent(session_id)
 
-    if not metadata:
+    if not agent:
         return {
             "error": f"No saved state for {target}",
-            "hint": "Session must have been active with PreCompact hook to have saved state"
+            "hint": "Agent must be registered with aqua to have state"
         }
 
-    project_dir = metadata.get("project_dir", "")
-    task_summary = metadata.get("task_summary", "")
-    claimed_files = metadata.get("claimed_files", [])
-    updated_at = metadata.get("updated_at", "")
+    project_dir = str(Path.cwd())  # Use current project
+    task_summary = agent.metadata.get("last_task", "") if agent.metadata else ""
 
     # Build resume command
     resume_cmd = f"cd {project_dir} && claude --resume"
@@ -54,7 +52,9 @@ def cmd_wake(
     if method == "info":
         return {
             "session_id": session_id,
-            "metadata": metadata,
+            "agent_name": agent.name,
+            "status": agent.status.value,
+            "current_task": agent.current_task_id,
             "resume_command": resume_cmd,
         }
 
@@ -160,18 +160,34 @@ def _try_wake(
 
 
 def cmd_sessions() -> Dict[str, Any]:
-    """List all saved session metadata.
+    """List all registered agents in the project.
 
     Returns:
-        Dict with list of sessions
+        Dict with list of agents
     """
-    storage = SQLiteStorage(Path.cwd())
-    sessions = storage.list_session_metadata()
+    db = get_project_db()
+    if not db:
+        return {
+            "sessions": [],
+            "message": "Aqua not initialized. Run 'aqua init' to enable agent tracking."
+        }
+
+    agents = db.get_all_agents()
+    sessions = [
+        {
+            "id": a.id,
+            "name": a.name,
+            "status": a.status.value,
+            "current_task": a.current_task_id,
+            "last_heartbeat": a.last_heartbeat_at.isoformat() if a.last_heartbeat_at else None,
+        }
+        for a in agents
+    ]
 
     if not sessions:
         return {
             "sessions": [],
-            "message": "No saved sessions. Sessions are saved by PreCompact hook."
+            "message": "No agents registered. Run 'aqua join' to register."
         }
 
     return {"sessions": sessions}

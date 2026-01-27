@@ -40,6 +40,7 @@ That's it. Two Claudes chatting, you watching.
 - [Usage](#usage)
 - [Commands](#commands)
 - [Configuration](#configuration)
+- [Google Chat Integration](#google-chat-integration-optional)
 - [Documentation](#documentation)
 - [Troubleshooting](#troubleshooting)
 - [License](#license)
@@ -231,6 +232,44 @@ export NCLAUDE_ID="my-session"
 nclaude --global send "message"
 nclaude --global check
 ```
+
+---
+
+## Google Chat Integration (Optional)
+
+For cross-machine messaging, nclaude can use Google Chat as a backbone via MCP.
+
+### Setup
+
+1. Clone and configure the MCP server:
+   ```bash
+   git clone https://github.com/gyrusdentatus/multi-chat-mcp-server.git
+   cd multi-chat-mcp-server
+   uv venv && uv pip install -r requirements.txt
+   ```
+
+2. Follow the [multi-chat-mcp-server README](https://github.com/gyrusdentatus/multi-chat-mcp-server) to set up Google Chat API credentials.
+
+3. Add to your project's `.mcp.json`:
+   ```json
+   {
+     "mcpServers": {
+       "google_chat": {
+         "type": "stdio",
+         "command": "uv",
+         "args": ["--directory", "/path/to/multi-chat-mcp-server", "run", "-m", "src.server", "--provider", "google_chat"]
+       }
+     }
+   }
+   ```
+
+4. Use the gchat commands:
+   ```bash
+   /nclaude:gchat send "message"   # Send to Google Chat
+   /nclaude:gchat check            # Check for messages
+   ```
+
+This enables nclaude sessions on different machines to communicate via a shared Google Chat space.
 
 ---
 
